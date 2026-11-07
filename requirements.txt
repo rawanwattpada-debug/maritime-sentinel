@@ -1,0 +1,7 @@
+# Member 1 - real AIS data
+websockets
+pandas
+pyarrow
+fastapi
+uvicorn
+python-dotenv
