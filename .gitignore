@@ -221,3 +221,4 @@ __marimo__/
 
 # Raw recordings and downloads (too big for GitHub - keep them in Google Drive)
 data/raw/
+data/*.html
