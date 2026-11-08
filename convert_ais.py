@@ -97,12 +97,18 @@ def relocate(df):
     along = moving & (axis_diff(df["cog_deg"], src_axis) <= 35)
     lat0, lon0 = df.loc[along, "lat"].median(), df.loc[along, "lon"].median()
 
-    # local metres around the source lane centre
+    # local metres around that point
     x = (df["lon"] - lon0) * math.cos(math.radians(lat0)) * M_PER_DEG_LON_EQ
     y = (df["lat"] - lat0) * M_PER_DEG_LAT
 
-    # keep points inside the lane corridor
+    # re-centre using medians measured along / across the lane (robust on a diagonal lane)
     a = math.radians(src_axis)
+    along_m = (x * math.sin(a) + y * math.cos(a))[along].median()
+    across_m = (x * math.cos(a) - y * math.sin(a))[along].median()
+    x = x - (along_m * math.sin(a) + across_m * math.cos(a))
+    y = y - (along_m * math.cos(a) - across_m * math.sin(a))
+
+    # keep points inside the lane corridor
     off_axis_km = (x * math.cos(a) - y * math.sin(a)).abs() / 1000
     keep = off_axis_km <= CORRIDOR_HALF_WIDTH_KM
 
