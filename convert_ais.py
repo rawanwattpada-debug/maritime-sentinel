@@ -166,8 +166,8 @@ def write_preview(df, path):
 <style>html,body,#map{{height:100%;margin:0}}</style></head><body><div id="map"></div>
 <script>
 const map = L.map('map').setView([{TARGET_CENTER[0]}, {TARGET_CENTER[1]}], 10);
-L.tileLayer('https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',
-  {{maxZoom: 18, attribution: '&copy; OpenStreetMap'}}).addTo(map);
+L.tileLayer('https://{{s}}.basemaps.cartocdn.com/rastertiles/voyager/{{z}}/{{x}}/{{y}}.png',
+  {{maxZoom: 18, attribution: '&copy; OpenStreetMap &copy; CARTO'}}).addTo(map);
 const tracks = {json.dumps(tracks)};
 tracks.forEach(t => L.polyline(t, {{color: '#0891b2', weight: 2}}).addTo(map));
 </script></body></html>"""
