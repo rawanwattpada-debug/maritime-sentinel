@@ -24,7 +24,13 @@ LIVE:   speed is always 1. Ships keep moving along their course between reports
 "own_ship" = one real ship we treat as our vessel (source "own").
 
 Simulated targets (member 2): put contract-format files in data/sim/ (.parquet or .csv).
-  REPLAY: they start SIM_START_MIN minutes into the loop.
+  REPLAY with data/sim/schedule.json (the demo script):
+          each scenario starts at its "at_second" (REAL seconds into the loop) and is
+          attached to our ship: "follow" (moves with it - attacks) or "place" (put near it,
+          then stays in the sea - fishing). Draw every scenario around our ship FIXED at
+          "reference". The loop is "loop_seconds" long, taken from the busiest part of the
+          recording ("start_offset_min": "auto").
+  REPLAY without schedule.json: every scenario starts SIM_START_MIN minutes in, as drawn.
   LIVE:   they start when someone opens http://localhost:8000/inject  ("press the button").
 """
 
@@ -37,6 +43,7 @@ import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -52,7 +59,9 @@ MODE = "LIVE" if "--live" in sys.argv else "REPLAY"
 AIS_FILE = "data/ais_live.parquet"
 SIM_GLOB = "data/sim/*"
 OWN_SHIP_MMSI = None        # REPLAY: None = pick automatically; or a number, e.g. 538007774
-SIM_START_MIN = 5           # REPLAY: simulated scenarios start this many minutes into the loop
+SIM_START_MIN = 5           # REPLAY without schedule.json: scenarios start this many minutes in
+SCHEDULE_FILE = "data/sim/schedule.json"   # REPLAY: the demo script (see load_schedule)
+SIM_REFERENCE = (12.58, 43.33)  # member 2 draws our ship FIXED here; we attach it to the real one
 MAX_GAP_MIN = 20            # REPLAY: do not draw a ship across a gap longer than this
 LIVE_MAX_AGE_MIN = 15       # LIVE: hide a ship not heard from for this long
 DEFAULT_SPEED = 10
@@ -116,8 +125,8 @@ class Track:
 
 
 def load_sims():
-    """Simulated scenario files from member 2, each as its own table."""
-    sims = []
+    """Simulated scenario files from member 2: {file name: table}."""
+    sims = {}
     for path in sorted(glob.glob(SIM_GLOB)):
         if not path.endswith((".parquet", ".csv")):
             continue
@@ -126,7 +135,7 @@ def load_sims():
         df["t"] = to_seconds(df["timestamp"])
         for col in ("lat", "lon", "sog_kn", "cog_deg"):
             df[col] = pd.to_numeric(df[col], errors="coerce")
-        sims.append(df)
+        sims[Path(path).name] = df
         print(f"  + simulated targets: {Path(path).name} ({df['track_id'].nunique()} tracks)")
     return sims
 
@@ -134,11 +143,53 @@ def load_sims():
 def sim_tracks(sims, start_t):
     """Shift every scenario so it starts at start_t, and make Tracks out of them."""
     tracks = []
-    for df in sims:
+    for df in sims.values():
         df = df.copy()
         df["t"] += start_t - df["t"].min()
         tracks += [Track(g) for _, g in df.groupby("track_id")]
     return tracks
+
+
+class AnchoredTarget:
+    """A simulated target drawn around a FIXED ship at the reference point,
+    attached to our real (moving) ship:
+      follow - the whole scenario moves with our ship (attackers really reach it);
+               speed/course are recomputed so they are the true speed over ground
+      place  - the scenario is put around our ship when it starts, then stays put
+               in the sea (fishing boats do not follow us; we sail past them)
+      none   - coordinates used exactly as given in the file
+    """
+
+    def __init__(self, track, mode, own_track, start_t, reference):
+        self.track, self.mode, self.own, self.ref = track, mode, own_track, reference
+        self.info = track.info
+        self.fixed = self.offset(start_t) if mode == "place" else None
+
+    def offset(self, t):
+        p = self.own.at(t)
+        return None if p is None else (p[0] - self.ref[0], p[1] - self.ref[1])
+
+    def absolute(self, t):
+        rel = self.track.at(t)
+        if rel is None or self.mode == "none":
+            return rel
+        off = self.fixed if self.mode == "place" else self.offset(t)
+        if off is None:
+            return None
+        return rel[0] + off[0], rel[1] + off[1], rel[2], rel[3]
+
+    def at(self, t):
+        pos = self.absolute(t)
+        if pos is None or self.mode != "follow":
+            return pos
+        nxt = self.absolute(t + 10)
+        if nxt is None:
+            return pos
+        dy = (nxt[0] - pos[0]) * M_PER_DEG_LAT
+        dx = (nxt[1] - pos[1]) * math.cos(math.radians(pos[0])) * M_PER_DEG_LON_EQ
+        sog = math.hypot(dx, dy) / 10 * 3600 / 1852
+        cog = math.degrees(math.atan2(dx, dy)) % 360
+        return pos[0], pos[1], sog, cog
 
 
 def tracks_at(tracks, t, ts):
@@ -173,10 +224,88 @@ def load_replay():
     start, end = ais.loc[is_own, "t"].min(), ais.loc[is_own, "t"].max()
 
     tracks = [Track(g) for _, g in ais.groupby("track_id")]
-    tracks += sim_tracks(SIMS, start + SIM_START_MIN * 60)
-    print(f"REPLAY ready: {len(tracks)} tracks, own ship = {own}, "
-          f"loop = {(end - start) / 60:.0f} recorded minutes")
-    return tracks, start, end
+    own_track = next(tr for tr in tracks if tr.info["track_id"] == "own_ship")
+    return tracks, own_track, start, end
+
+
+def load_schedule():
+    """data/sim/schedule.json = the demo script. Without it: every scenario
+    starts SIM_START_MIN minutes in, and the whole recording loops."""
+    if not os.path.exists(SCHEDULE_FILE):
+        return None
+    with open(SCHEDULE_FILE, encoding="utf-8") as f:
+        s = json.load(f)
+    s.setdefault("speed", DEFAULT_SPEED)
+    s.setdefault("loop_seconds", 130)
+    s.setdefault("start_offset_min", "auto")
+    s.setdefault("reference", list(SIM_REFERENCE))
+    s.setdefault("scenarios", [])
+    return s
+
+
+def busiest_start(tracks, start, end, length):
+    """Start of the window (of `length` recorded seconds) with the most ships on screen."""
+    others = [tr for tr in tracks if tr.info["track_id"] != "own_ship"]
+    best, best_score = start, -1
+    for s in np.arange(start, max(start, end - length) + 1, 60):
+        score = sum(tr.at(t) is not None for tr in others for t in np.arange(s, s + length, 120))
+        if score > best_score:
+            best, best_score = s, score
+    return best
+
+
+class Replay:
+    """Everything REPLAY needs; the demo window and targets depend on the speed."""
+
+    def __init__(self):
+        self.tracks, self.own, self.own_start, self.own_end = load_replay()
+        self.schedule = load_schedule()
+        self.cache = {}
+        if self.schedule:
+            s = self.schedule
+            length = s["loop_seconds"] * s["speed"]
+            if s["start_offset_min"] == "auto":
+                self.start = busiest_start(self.tracks, self.own_start, self.own_end, length)
+            else:
+                self.start = self.own_start + float(s["start_offset_min"]) * 60
+            names = ", ".join(f"{sc['file']}@{sc['at_second']}s/{sc.get('anchor', 'place')}"
+                              for sc in s["scenarios"])
+            print(f"Demo script: {s['loop_seconds']} s loop at x{s['speed']}, "
+                  f"starting {(self.start - self.own_start) / 60:.0f} min into the recording | {names}")
+        else:
+            self.start = self.own_start
+        print(f"REPLAY ready: {len(self.tracks)} recorded tracks, "
+              f"own ship in recording for {(self.own_end - self.own_start) / 60:.0f} min")
+
+    def default_speed(self):
+        return self.schedule["speed"] if self.schedule else DEFAULT_SPEED
+
+    def window(self, speed):
+        if not self.schedule:
+            return self.own_start, self.own_end
+        return self.start, min(self.start + self.schedule["loop_seconds"] * speed, self.own_end)
+
+    def targets(self, speed):
+        """Simulated targets for this speed (scenario times are in real demo seconds)."""
+        if speed in self.cache:
+            return self.cache[speed]
+        out = []
+        if not self.schedule:
+            out = sim_tracks(SIMS, self.start + SIM_START_MIN * 60)
+        else:
+            ref = tuple(self.schedule["reference"])
+            for sc in self.schedule["scenarios"]:
+                df = SIMS.get(sc["file"])
+                if df is None:
+                    print(f"  ! {sc['file']} is in schedule.json but not in data/sim/ - skipped")
+                    continue
+                t0 = self.start + sc["at_second"] * speed
+                df = df.copy()
+                df["t"] += t0 - df["t"].min()
+                out += [AnchoredTarget(Track(g), sc.get("anchor", "place"), self.own, t0, ref)
+                        for _, g in df.groupby("track_id")]
+        self.cache[speed] = out
+        return out
 
 
 # ---------------------------------------------------------------- LIVE mode
@@ -265,7 +394,7 @@ def live_points(now, ts, settings):
 # ---------------------------------------------------------------- server
 
 if MODE == "REPLAY":
-    TRACKS, START, END = load_replay()
+    REPLAY = Replay()
 else:
     SETTINGS = load_settings()
     if not API_KEY:
@@ -287,26 +416,29 @@ app = FastAPI(title="Maritime Sentinel - ship feed", lifespan=lifespan)
 def frame(t, speed):
     ts = iso(t)
     if MODE == "REPLAY":
-        points = tracks_at(TRACKS, t, ts)
+        points = tracks_at(REPLAY.tracks, t, ts) + tracks_at(REPLAY.targets(speed), t, ts)
     else:
         points = live_points(t, ts, SETTINGS) + tracks_at(Live.sims, t, ts)
     return {"mode": MODE, "t": ts, "speed": speed, "points": points}
 
 
 @app.websocket("/ws")
-async def feed(ws: WebSocket, speed: float = DEFAULT_SPEED):
+async def feed(ws: WebSocket, speed: Optional[float] = None):
     await ws.accept()
     if MODE == "LIVE":
         speed = 1
-    t = START if MODE == "REPLAY" else time.time()
+    else:
+        speed = speed or REPLAY.default_speed()
+        start, end = REPLAY.window(speed)
+    t = start if MODE == "REPLAY" else time.time()
     try:
         while True:
             await ws.send_text(json.dumps(frame(t, speed)))
             await asyncio.sleep(1)
             if MODE == "REPLAY":
                 t += speed
-                if t > END:
-                    t = START          # exhibition mode: loop forever
+                if t > end:
+                    t = start          # exhibition mode: loop forever
             else:
                 t = time.time()
     except WebSocketDisconnect:
@@ -325,7 +457,13 @@ def inject():
 @app.get("/info")
 def info():
     if MODE == "REPLAY":
-        return {"mode": MODE, "tracks": len(TRACKS), "start": iso(START), "end": iso(END)}
+        speed = REPLAY.default_speed()
+        start, end = REPLAY.window(speed)
+        return {"mode": MODE, "recorded_tracks": len(REPLAY.tracks), "speed": speed,
+                "loop_start": iso(start), "loop_end": iso(end),
+                "loop_real_seconds": round((end - start) / speed),
+                "simulated_tracks": len(REPLAY.targets(speed)),
+                "demo_script": REPLAY.schedule is not None}
     return {"mode": MODE, "aisstream": Live.status, "ships_now": len(Live.ships),
             "simulated_tracks": len(Live.sims)}
 
@@ -343,8 +481,8 @@ font:14px monospace;padding:8px 12px;border-radius:6px}
 const map = L.map('map').setView([12.58, 43.33], 11);
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
   {maxZoom: 18, attribution: 'Tiles &copy; Esri'}).addTo(map);
-const speed = new URLSearchParams(location.search).get('speed') || 60;
-const ws = new WebSocket(`ws://${location.host}/ws?speed=${speed}`);
+const speed = new URLSearchParams(location.search).get('speed');
+const ws = new WebSocket(`ws://${location.host}/ws` + (speed ? `?speed=${speed}` : ''));
 const markers = {};
 ws.onmessage = e => {
   const f = JSON.parse(e.data), seen = new Set();

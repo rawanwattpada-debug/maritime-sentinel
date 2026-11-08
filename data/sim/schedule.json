@@ -1,0 +1,11 @@
+{
+  "_help": "Demo script for replay.py. Times are REAL seconds into the loop. anchor: follow = moves with our ship (attacks), place = put near our ship when it starts, then stays in the sea (fishing). Member 2 draws every scenario around our ship FIXED at 'reference'.",
+  "speed": 10,
+  "loop_seconds": 130,
+  "start_offset_min": "auto",
+  "reference": [12.58, 43.33],
+  "scenarios": [
+    {"file": "fishing_cluster.csv", "at_second": 15, "anchor": "place"},
+    {"file": "coordinated_attack.csv", "at_second": 45, "anchor": "follow"}
+  ]
+}
