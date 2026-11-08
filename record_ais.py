@@ -28,6 +28,9 @@ REGIONS = {
     "bab_el_mandeb": [[12.0, 42.5], [13.5, 44.0]],
     "jeddah":        [[21.2, 38.8], [21.8, 39.3]],
     "jubail":        [[26.8, 49.5], [27.5, 50.3]],
+    # TEST ONLY: very busy area with good aisstream coverage.
+    # If ships show up here but not above, the code works and the problem is coverage.
+    "test_channel":  [[50.8, 1.0], [51.3, 2.0]],   # Dover Strait, English Channel
 }
 
 STATUS_EVERY_SEC = 60
