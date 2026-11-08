@@ -24,6 +24,7 @@ from record_ais import OUT_FILE as RAW_FILE, REGIONS
 
 OUT_PARQUET = "data/ais_live.parquet"
 OUT_PREVIEW = "data/ais_live_preview.html"
+OUT_SETTINGS = "data/relocation.json"     # used by replay.py --live
 
 # ---- Settings you may tune after looking at the preview map ----------------------
 SOURCE_REGION = "test_channel"        # which recorded area to use
@@ -89,59 +90,84 @@ def axis_diff(cog, axis):
     return np.minimum(d, 180 - d)
 
 
-def relocate(df):
-    df = df[in_region(df, SOURCE_REGION)].copy()
-    if df.empty:
-        return df, None
-
+def fit_relocation(df):
+    """Measure the Dover lane (direction + centre) from recorded ships.
+    Returns the settings that apply_relocation() needs; also saved for LIVE mode."""
     moving = df["sog_kn"] > 3
     src_axis = lane_axis(df.loc[moving, "cog_deg"])
     # lane centre = middle of the ships that actually follow the lane
     along = moving & (axis_diff(df["cog_deg"], src_axis) <= 35)
     lat0, lon0 = df.loc[along, "lat"].median(), df.loc[along, "lon"].median()
 
-    # local metres around that point
+    # re-centre using medians measured along / across the lane (robust on a diagonal lane)
     x = (df["lon"] - lon0) * math.cos(math.radians(lat0)) * M_PER_DEG_LON_EQ
     y = (df["lat"] - lat0) * M_PER_DEG_LAT
-
-    # re-centre using medians measured along / across the lane (robust on a diagonal lane)
     a = math.radians(src_axis)
     along_m = (x * math.sin(a) + y * math.cos(a))[along].median()
     across_m = (x * math.cos(a) - y * math.sin(a))[along].median()
-    x = x - (along_m * math.sin(a) + across_m * math.cos(a))
-    y = y - (along_m * math.cos(a) - across_m * math.sin(a))
+    shift_x = along_m * math.sin(a) + across_m * math.cos(a)
+    shift_y = along_m * math.cos(a) - across_m * math.sin(a)
+    lat_c = lat0 + shift_y / M_PER_DEG_LAT
+    lon_c = lon0 + shift_x / (math.cos(math.radians(lat0)) * M_PER_DEG_LON_EQ)
+
+    return {
+        "source_axis": float(src_axis),
+        "source_center": [float(lat_c), float(lon_c)],
+        "target_center": list(TARGET_CENTER),
+        "target_bearing": TARGET_LANE_BEARING,
+        "across_scale": ACROSS_SCALE,
+        "corridor_half_width_km": CORRIDOR_HALF_WIDTH_KM,
+    }
+
+
+def apply_relocation(lat, lon, cog, p):
+    """Move Dover positions onto the Bab el-Mandeb lane. Works on single numbers or columns.
+    Returns (new_lat, new_lon, new_cog, inside_corridor)."""
+    lat_c, lon_c = p["source_center"]
+    x = (lon - lon_c) * math.cos(math.radians(lat_c)) * M_PER_DEG_LON_EQ
+    y = (lat - lat_c) * M_PER_DEG_LAT
 
     # position measured along the lane (s) and sideways from it (d), in metres
+    a = math.radians(p["source_axis"])
     s = x * math.sin(a) + y * math.cos(a)
     d = x * math.cos(a) - y * math.sin(a)
+    inside = abs(d) / 1000 <= p["corridor_half_width_km"]
 
-    # keep points inside the lane corridor
-    keep = d.abs() / 1000 <= CORRIDOR_HALF_WIDTH_KM
+    # lay the same (s, d) on the target lane: rotate, squeeze sideways, move
+    b = math.radians(p["target_bearing"])
+    d = d * p["across_scale"]
+    x2 = s * math.sin(b) + d * math.cos(b)
+    y2 = s * math.cos(b) - d * math.sin(b)
+    lat_t, lon_t = p["target_center"]
+    new_lat = lat_t + y2 / M_PER_DEG_LAT
+    new_lon = lon_t + x2 / (math.cos(math.radians(lat_t)) * M_PER_DEG_LON_EQ)
+    new_cog = (cog + p["target_bearing"] - p["source_axis"]) % 360
+    return new_lat, new_lon, new_cog, inside
+
+
+def relocate(df):
+    df = df[in_region(df, SOURCE_REGION)].copy()
+    if df.empty:
+        return df, None, None
+
+    p = fit_relocation(df)
+    df["lat"], df["lon"], new_cog, keep = apply_relocation(df["lat"], df["lon"], df["cog_deg"], p)
 
     # drop ships that mostly cross the lane (e.g. Dover-Calais ferries)
-    aligned = axis_diff(df["cog_deg"], src_axis) <= 35
+    moving = df["sog_kn"] > 3
+    aligned = axis_diff(df["cog_deg"], p["source_axis"]) <= 35
     share = aligned[moving].groupby(df.loc[moving, "mmsi"]).mean()
     crossers = share[share < LANE_ALIGNED_SHARE].index
     keep &= ~df["mmsi"].isin(crossers)
-
-    # lay the same (s, d) on the target lane: rotate, squeeze sideways, move
-    b = math.radians(TARGET_LANE_BEARING)
-    d = d * ACROSS_SCALE
-    x2 = s * math.sin(b) + d * math.cos(b)
-    y2 = s * math.cos(b) - d * math.sin(b)
-    lat_t, lon_t = TARGET_CENTER
-    df["lat"] = lat_t + y2 / M_PER_DEG_LAT
-    df["lon"] = lon_t + x2 / (math.cos(math.radians(lat_t)) * M_PER_DEG_LON_EQ)
-    rotation = TARGET_LANE_BEARING - src_axis
-    df["cog_deg"] = (df["cog_deg"] + rotation) % 360
+    df["cog_deg"] = new_cog
 
     info = {
-        "source_axis": round(src_axis, 1),
-        "rotation": round(rotation, 1),
+        "source_axis": round(p["source_axis"], 1),
+        "rotation": round(p["target_bearing"] - p["source_axis"], 1),
         "ships_dropped_as_crossers": len(crossers),
         "points_outside_corridor": int((~keep).sum()),
     }
-    return df[keep], info
+    return df[keep], info, p
 
 
 def to_contract(df):
@@ -195,13 +221,15 @@ tracks.forEach(t => L.polyline(t, {{color: '#0891b2', weight: 2}}).addTo(map));
 if __name__ == "__main__":
     raw = load_raw(RAW_FILE)
     print(f"Position reports in recording: {len(raw)}")
-    moved, info = relocate(raw) if not raw.empty else (raw, None)
+    moved, info, settings = relocate(raw) if not raw.empty else (raw, None, None)
     if moved.empty:
         print(f"No ships found in '{SOURCE_REGION}'. Record longer, then try again.")
     else:
         out = to_contract(moved)
         out.to_parquet(OUT_PARQUET, index=False)
         write_preview(out, OUT_PREVIEW)
+        with open(OUT_SETTINGS, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2)
         span = pd.to_datetime(out["timestamp"])
         print(f"Lane direction in Dover: {info['source_axis']} deg, rotated by {info['rotation']} deg")
         print(f"Dropped: {info['ships_dropped_as_crossers']} crossing ships, "
@@ -210,3 +238,4 @@ if __name__ == "__main__":
               f"{span.min():%H:%M} -> {span.max():%H:%M} UTC")
         print(f"  -> {OUT_PARQUET}")
         print(f"  -> {OUT_PREVIEW}   (open it in a browser to check)")
+        print(f"  -> {OUT_SETTINGS}   (lane settings for LIVE mode)")
