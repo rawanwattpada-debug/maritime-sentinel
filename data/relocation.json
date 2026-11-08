@@ -1,0 +1,14 @@
+{
+  "source_axis": 44.94110899908112,
+  "source_center": [
+    51.05676999847539,
+    1.4781200286898113
+  ],
+  "target_center": [
+    12.58,
+    43.33
+  ],
+  "target_bearing": 146,
+  "across_scale": 0.45,
+  "corridor_half_width_km": 8
+}
