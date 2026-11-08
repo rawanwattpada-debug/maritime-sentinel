@@ -166,8 +166,17 @@ def write_preview(df, path):
 <style>html,body,#map{{height:100%;margin:0}}</style></head><body><div id="map"></div>
 <script>
 const map = L.map('map').setView([{TARGET_CENTER[0]}, {TARGET_CENTER[1]}], 10);
-L.tileLayer('https://{{s}}.basemaps.cartocdn.com/rastertiles/voyager/{{z}}/{{x}}/{{y}}.png',
-  {{maxZoom: 18, attribution: '&copy; OpenStreetMap &copy; CARTO'}}).addTo(map);
+const esri = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
+const layers = {{
+  'Satellite (Esri)': L.tileLayer(esri + 'World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}',
+    {{maxZoom: 18, attribution: 'Tiles &copy; Esri'}}),
+  'Streets (Esri)': L.tileLayer(esri + 'World_Street_Map/MapServer/tile/{{z}}/{{y}}/{{x}}',
+    {{maxZoom: 18, attribution: 'Tiles &copy; Esri'}}),
+  'Topo (OpenTopoMap)': L.tileLayer('https://{{s}}.tile.opentopomap.org/{{z}}/{{x}}/{{y}}.png',
+    {{maxZoom: 17, attribution: '&copy; OpenStreetMap &copy; OpenTopoMap'}}),
+}};
+layers['Satellite (Esri)'].addTo(map);
+L.control.layers(layers).addTo(map);
 const tracks = {json.dumps(tracks)};
 tracks.forEach(t => L.polyline(t, {{color: '#0891b2', weight: 2}}).addTo(map));
 </script></body></html>"""
