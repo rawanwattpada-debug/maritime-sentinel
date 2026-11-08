@@ -5,3 +5,4 @@ pyarrow
 fastapi
 uvicorn
 python-dotenv
+zstandard
