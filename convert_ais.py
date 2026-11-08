@@ -28,8 +28,11 @@ OUT_PREVIEW = "data/ais_live_preview.html"
 # ---- Settings you may tune after looking at the preview map ----------------------
 SOURCE_REGION = "test_channel"        # which recorded area to use
 TARGET_CENTER = (12.58, 43.33)        # (lat, lon) middle of the Bab el-Mandeb lane
-TARGET_LANE_BEARING = 140             # direction of the target lane, degrees (0 = north)
+TARGET_LANE_BEARING = 146             # direction of the target lane, degrees (0 = north)
 CORRIDOR_HALF_WIDTH_KM = 8            # keep only points this close to the lane axis
+ACROSS_SCALE = 0.45                   # Dover is ~33 km wide, Bab el-Mandeb's main channel is
+                                      # much narrower: squeeze sideways distances only
+                                      # (distances and speeds ALONG the lane are unchanged)
 LANE_ALIGNED_SHARE = 0.6              # a moving ship must follow the lane this often
 # ----------------------------------------------------------------------------------
 
@@ -108,9 +111,12 @@ def relocate(df):
     x = x - (along_m * math.sin(a) + across_m * math.cos(a))
     y = y - (along_m * math.cos(a) - across_m * math.sin(a))
 
+    # position measured along the lane (s) and sideways from it (d), in metres
+    s = x * math.sin(a) + y * math.cos(a)
+    d = x * math.cos(a) - y * math.sin(a)
+
     # keep points inside the lane corridor
-    off_axis_km = (x * math.cos(a) - y * math.sin(a)).abs() / 1000
-    keep = off_axis_km <= CORRIDOR_HALF_WIDTH_KM
+    keep = d.abs() / 1000 <= CORRIDOR_HALF_WIDTH_KM
 
     # drop ships that mostly cross the lane (e.g. Dover-Calais ferries)
     aligned = axis_diff(df["cog_deg"], src_axis) <= 35
@@ -118,18 +124,20 @@ def relocate(df):
     crossers = share[share < LANE_ALIGNED_SHARE].index
     keep &= ~df["mmsi"].isin(crossers)
 
-    # rotate so the source lane lines up with the target lane, then move it there
-    theta = math.radians((TARGET_LANE_BEARING - src_axis) % 180)
-    x2 = x * math.cos(theta) + y * math.sin(theta)
-    y2 = -x * math.sin(theta) + y * math.cos(theta)
+    # lay the same (s, d) on the target lane: rotate, squeeze sideways, move
+    b = math.radians(TARGET_LANE_BEARING)
+    d = d * ACROSS_SCALE
+    x2 = s * math.sin(b) + d * math.cos(b)
+    y2 = s * math.cos(b) - d * math.sin(b)
     lat_t, lon_t = TARGET_CENTER
     df["lat"] = lat_t + y2 / M_PER_DEG_LAT
     df["lon"] = lon_t + x2 / (math.cos(math.radians(lat_t)) * M_PER_DEG_LON_EQ)
-    df["cog_deg"] = (df["cog_deg"] + math.degrees(theta)) % 360
+    rotation = TARGET_LANE_BEARING - src_axis
+    df["cog_deg"] = (df["cog_deg"] + rotation) % 360
 
     info = {
         "source_axis": round(src_axis, 1),
-        "rotation": round(math.degrees(theta), 1),
+        "rotation": round(rotation, 1),
         "ships_dropped_as_crossers": len(crossers),
         "points_outside_corridor": int((~keep).sum()),
     }
