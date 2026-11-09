@@ -167,7 +167,7 @@ venv.bak/
 .ropeproject
 
 # mkdocs/Zensical documentation
-/site
+# /site  (mkdocs output; not used here - our website lives in site/)
 
 # mypy
 .mypy_cache/
