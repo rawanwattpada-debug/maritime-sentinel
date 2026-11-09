@@ -4,8 +4,7 @@
 export const SLIDES = [
   {
     id: 'title',
-    media: 'video',
-    video: 'videos/01-sea-night.mp4',
+    media: 'ocean',
     kicker: '',
     title: 'Maritime Sentinel',
     subtitle: 'منصة الإنذار المبكر للمخاطر البحرية',
@@ -13,8 +12,7 @@ export const SLIDES = [
   },
   {
     id: 'importance',
-    media: 'video',
-    video: 'videos/02-cargo-ship.mp4',
+    media: 'ocean',
     kicker: 'أهمية الملاحة البحرية',
     stat: { value: '80%+', label: 'من حجم التجارة العالمية يُنقل بحرًا' },
     lines: ['وأي تهديد لأمن الملاحة ينعكس مباشرة على سلاسل الإمداد العالمية.'],
@@ -62,7 +60,6 @@ export const SOURCES = [
   { key: 'UNCTAD', text: 'UNCTAD, Review of Maritime Transport' },
   { key: 'IMB', text: 'ICC International Maritime Bureau, Piracy and Armed Robbery Against Ships, 2025 annual report' },
   { key: 'JMIC', text: 'Joint Maritime Information Centre (via Reuters factbox, 2025)' },
-  { key: 'Pexels', text: 'Videos: Pexels (free license)' },
 ];
 
 export const DATA_NOTE =

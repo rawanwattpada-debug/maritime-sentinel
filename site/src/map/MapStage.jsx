@@ -31,12 +31,12 @@ const STYLE = {
     },
   },
   layers: [
-    { id: 'bg', type: 'background', paint: { 'background-color': '#061426' } },
+    { id: 'bg', type: 'background', paint: { 'background-color': '#123250' } },
     {
       id: 'imagery',
       type: 'raster',
       source: 'imagery',
-      paint: { 'raster-brightness-max': 0.55, 'raster-saturation': -0.35, 'raster-contrast': 0.1 },
+      paint: { 'raster-brightness-max': 0.72, 'raster-saturation': -0.2, 'raster-contrast': 0.08 },
     },
     { id: 'labels', type: 'raster', source: 'labels', paint: { 'raster-opacity': 0.55 } },
   ],
@@ -243,7 +243,7 @@ const MapStage = forwardRef(function MapStage(
       <div ref={el} className="h-full w-full" />
       <div
         className="pointer-events-none absolute inset-0 transition-opacity duration-700"
-        style={{ background: 'radial-gradient(ellipse at center, transparent 40%, #030a14 100%)', opacity: 0.9 }}
+        style={{ background: 'radial-gradient(ellipse at center, transparent 45%, #0b1426 100%)', opacity: 0.75 }}
       />
       <div
         className="pointer-events-none absolute inset-0 bg-abyss transition-opacity duration-700"

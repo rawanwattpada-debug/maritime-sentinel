@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { ChevronDown, ShieldCheck, Radar, Eye, Ship, Route, BrainCircuit } from 'lucide-react';
+import OceanScene from './OceanScene';
 import { SLIDES, SOURCES, DATA_NOTE } from '../content';
 import { VIEWS } from '../map/MapStage';
 
@@ -25,31 +26,48 @@ const ease = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
 const POINT_ICONS = [Ship, Route, BrainCircuit];
 const SOLUTION_ICONS = [Radar, ShieldCheck, Eye];
 
-function Video({ src, active }) {
-  const [failed, setFailed] = useState(false);
+const NAV = [
+  { label: 'الرئيسية', slide: 0 },
+  { label: 'التحدي', slide: 2 },
+  { label: 'الفجوة', slide: 3 },
+  { label: 'الحل', slide: 4 },
+];
+
+function Header({ section, go, onEnter }) {
   return (
-    <div className={`fixed inset-0 transition-opacity duration-1000 ${active ? 'opacity-100' : 'opacity-0'}`}>
-      {!failed && (
-        <video
-          className="h-full w-full object-cover"
-          src={src}
-          autoPlay
-          muted
-          loop
-          playsInline
-          onError={() => setFailed(true)}
-        />
-      )}
-      {/* tint so text stays readable; also the fallback when a video is missing */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background: failed
-            ? 'radial-gradient(ellipse at 70% 30%, #0b2a4a 0%, #061426 55%, #030a14 100%)'
-            : 'linear-gradient(180deg, rgba(3,10,20,.55) 0%, rgba(3,10,20,.35) 45%, rgba(3,10,20,.9) 100%)',
-        }}
-      />
-    </div>
+    <header className="fixed inset-x-0 top-0 z-30 border-b border-white/10 bg-abyss/40 backdrop-blur-md">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 sm:px-8">
+        <button onClick={() => go(0)} className="flex items-center gap-2.5" aria-label="Maritime Sentinel">
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-sea/50 bg-sea/15">
+            <ShieldCheck size={19} className="text-sea" />
+          </span>
+          <span dir="ltr" className="font-display text-sm font-extrabold tracking-wider text-white">
+            MARITIME<span className="text-sea">SENTINEL</span>
+          </span>
+        </button>
+        <nav className="hidden items-center gap-1 md:flex" aria-label="أقسام العرض">
+          {NAV.map((n) => (
+            <button
+              key={n.label}
+              onClick={() => go(n.slide)}
+              className={`rounded-lg px-3.5 py-2 text-sm transition ${
+                section === n.slide || (n.slide === 0 && section === 1)
+                  ? 'bg-white/10 text-white'
+                  : 'text-ink/70 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              {n.label}
+            </button>
+          ))}
+        </nav>
+        <button
+          onClick={onEnter}
+          className="flex items-center gap-2 rounded-lg bg-sea px-4 py-2 text-sm font-bold text-abyss transition hover:bg-sea/90"
+        >
+          <Radar size={16} /> غرفة العمليات
+        </button>
+      </div>
+    </header>
   );
 }
 
@@ -59,8 +77,10 @@ function Source({ k }) {
 
 export default function Intro({ stage, onPhase, onEnter }) {
   const scroller = useRef(null);
-  const [videoIdx, setVideoIdx] = useState(0);
   const [section, setSection] = useState(0);
+  const heroProgress = useRef(0);
+  const heroActive = useRef(true);
+  const [heroOn, setHeroOn] = useState(true);
 
   // camera choreography, scrubbed by scroll
   useEffect(() => {
@@ -76,7 +96,6 @@ export default function Intro({ stage, onPhase, onEnter }) {
           onToggle: (self) => {
             if (self.isActive) {
               setSection(i);
-              setVideoIdx(SLIDES[i].media === 'video' ? i : -1);
               onPhase?.(SLIDES[i].id);
             }
           },
@@ -91,16 +110,42 @@ export default function Intro({ stage, onPhase, onEnter }) {
         });
       });
 
-      // slide 3: globe -> strait
+      // slides 1-2: the ocean camera moves toward the bow
+      ScrollTrigger.create({
+        trigger: secs[0],
+        endTrigger: secs[2],
+        scroller: root,
+        start: 'top top',
+        end: 'top 35%',
+        scrub: true,
+        onUpdate: (self) => {
+          heroProgress.current = self.progress;
+        },
+      });
+      // the ocean hands over to the globe as slide 3 arrives
       ScrollTrigger.create({
         trigger: secs[2],
         scroller: root,
-        start: 'top bottom',
+        start: 'top 35%',
+        onEnter: () => { setHeroOn(false); setTimeout(() => { heroActive.current = false; }, 1200); },
+        onLeaveBack: () => { heroActive.current = true; setHeroOn(true); },
+      });
+      // slide 3: the globe turns for a moment, then the camera comes down to the strait
+      ScrollTrigger.create({
+        trigger: secs[2],
+        scroller: root,
+        start: 'top 35%',
         end: 'bottom center',
         scrub: true,
         onUpdate: (self) => {
           stage.current?.globe();
-          stage.current?.jump(mix(VIEWS.globe, VIEWS.strait, ease(self.progress)));
+          const p = self.progress;
+          if (p < 0.3) {
+            const spin = p / 0.3;
+            stage.current?.jump({ ...VIEWS.globe, center: [VIEWS.globe.center[0] - 70 + spin * 70, VIEWS.globe.center[1]] });
+          } else {
+            stage.current?.jump(mix(VIEWS.globe, VIEWS.strait, ease((p - 0.3) / 0.7)));
+          }
         },
       });
       // slide 4: flatten and tilt into 3D
@@ -129,9 +174,11 @@ export default function Intro({ stage, onPhase, onEnter }) {
         },
       });
     }, root);
-    stage.current?.jump(VIEWS.globe);
+    stage.current?.jump({ ...VIEWS.globe, center: [VIEWS.globe.center[0] - 70, VIEWS.globe.center[1]] });
     return () => ctx.revert();
   }, [stage, onPhase]);
+
+  const goTo = (i) => scroller.current?.querySelectorAll('section')[i]?.scrollIntoView({ behavior: 'smooth' });
 
   // keyboard: next / previous slide (for the presenter)
   useEffect(() => {
@@ -152,9 +199,18 @@ export default function Intro({ stage, onPhase, onEnter }) {
 
   return (
     <>
-      {SLIDES.map((sl, i) =>
-        sl.media === 'video' ? <Video key={sl.id} src={sl.video} active={videoIdx === i} /> : null,
-      )}
+      {/* cinematic ocean behind slides 1-2 */}
+      <div className={`fixed inset-0 transition-opacity duration-1000 ${heroOn ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
+        <OceanScene progressRef={heroProgress} activeRef={heroActive} />
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'linear-gradient(180deg, rgba(11,20,38,.55) 0%, rgba(11,20,38,0) 28%, rgba(11,20,38,0) 62%, rgba(11,20,38,.85) 100%), linear-gradient(270deg, rgba(11,20,38,.55) 0%, rgba(11,20,38,0) 45%)',
+          }}
+        />
+      </div>
+      <Header section={section} go={goTo} onEnter={onEnter} />
 
       {/* progress dots */}
       <nav className="fixed left-6 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-3" aria-label="الشرائح">
@@ -172,22 +228,22 @@ export default function Intro({ stage, onPhase, onEnter }) {
 
       <div ref={scroller} className="fixed inset-0 z-10 overflow-y-auto overflow-x-hidden scroll-smooth">
         {/* 1. title */}
-        <section className="relative flex min-h-screen flex-col items-center justify-center px-6 text-center">
+        <section className="relative flex min-h-[120vh] flex-col items-center px-6 pt-[16vh] text-center">
           <span className="reveal mb-6 inline-flex items-center gap-2 rounded-full border border-sea/40 bg-sea/10 px-4 py-1.5 text-sm text-sea">
             <ShieldCheck size={16} /> {s1.subtitle}
           </span>
-          <h1 className="reveal font-display text-5xl font-extrabold tracking-wide text-white sm:text-7xl md:text-8xl" dir="ltr">
+          <h1 className="reveal font-display text-5xl font-extrabold tracking-wide text-white drop-shadow-[0_4px_24px_rgba(0,0,0,.45)] sm:text-7xl md:text-8xl" dir="ltr">
             MARITIME <span className="text-sea">SENTINEL</span>
           </h1>
-          <p className="reveal mt-6 max-w-2xl text-lg text-ink/85 sm:text-xl">{s1.lines[0]}</p>
-          <div className="reveal absolute bottom-10 flex flex-col items-center gap-1 text-sm text-muted">
+          <p className="reveal mt-5 max-w-2xl text-lg text-ink/90 drop-shadow sm:text-xl">{s1.lines[0]}</p>
+          <div className="reveal absolute top-[calc(100vh-7rem)] flex flex-col items-center gap-1 text-sm text-ink/80">
             مرّر للأسفل
             <ChevronDown className="animate-bounce" />
           </div>
         </section>
 
         {/* 2. importance */}
-        <section className="relative flex min-h-screen items-center px-6 sm:px-16">
+        <section className="relative flex min-h-[130vh] items-center px-6 sm:px-16">
           <div className="max-w-3xl">
             <p className="reveal mb-4 font-display text-lg font-bold text-sea">{s2.kicker}</p>
             <p className="reveal font-display text-[22vw] font-extrabold leading-none text-white sm:text-[11rem]" dir="ltr">

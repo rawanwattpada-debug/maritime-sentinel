@@ -3,17 +3,18 @@
 
 /* Colours and fonts follow the team's presentation deck */
 @theme {
-  --color-abyss: #030a14;
-  --color-deep: #061426;
-  --color-panel: #0b1d33;
-  --color-line: #12304f;
+  /* navy-slate base (lighter than before), cyan/teal accents, amber for warnings */
+  --color-abyss: #0b1426;
+  --color-deep: #111f36;
+  --color-panel: #182a45;
+  --color-line: #2c4263;
   --color-sea: #22d3ee;
-  --color-teal: #14b8a6;
-  --color-amber: #f5b547;
-  --color-danger: #ef4444;
-  --color-safe: #34d399;
-  --color-ink: #e2e8f0;
-  --color-muted: #8ba3bf;
+  --color-teal: #2dd4bf;
+  --color-amber: #fbbf24;
+  --color-danger: #f87171;
+  --color-safe: #4ade80;
+  --color-ink: #f1f5f9;
+  --color-muted: #9fb3c8;
 
   --font-display: "Cairo", system-ui, sans-serif;
   --font-body: "IBM Plex Sans Arabic", "Cairo", system-ui, sans-serif;
@@ -32,9 +33,10 @@ body {
 
 /* glass panels over the map */
 .glass {
-  background: color-mix(in srgb, var(--color-deep) 82%, transparent);
-  border: 1px solid color-mix(in srgb, var(--color-sea) 18%, transparent);
-  backdrop-filter: blur(10px);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--color-panel) 78%, transparent), color-mix(in srgb, var(--color-deep) 70%, transparent));
+  border: 1px solid color-mix(in srgb, var(--color-sea) 22%, var(--color-line));
+  box-shadow: 0 10px 30px -12px rgb(0 0 0 / 0.45), inset 0 1px 0 rgb(255 255 255 / 0.04);
+  backdrop-filter: blur(12px);
 }
 
 .maplibregl-ctrl-attrib { font-size: 10px; background: rgb(3 10 20 / 0.6) !important; }
