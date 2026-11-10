@@ -3,36 +3,41 @@ import MapStage, { VIEWS, focusViews } from './map/MapStage';
 import Intro from './intro/Intro';
 import Dashboard from './dashboard/Dashboard';
 import { useDemo } from './data/useDemo';
-
+import { useLiveFeed } from './data/useLiveFeed';
 // Moment of the loop shown behind the intro: attackers closing in, fishing boats nearby
 const INTRO_SECOND = 82;
 
 export default function App() {
   const demo = useDemo();
-  const stage = useRef(null);
-  const [mode, setMode] = useState('intro'); // intro | dashboard
-  const [phase, setPhase] = useState('title');
-  const [selectedId, setSelectedId] = useState(null);
-  const [dim, setDim] = useState(0);
+ const live = useLiveFeed();
 
-  useEffect(() => {
-    if (demo.ready && mode === 'intro') {
-      const own = demo.frames[INTRO_SECOND].points.find((p) => p.track_id === 'own_ship');
-      if (own) focusViews(own.lon, own.lat);
-      demo.seek(INTRO_SECOND);
-      demo.setRate(0.12);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [demo.ready, mode]);
+ const [dataMode, setDataMode] = useState('replay');
+ const activeData = dataMode === 'live' ? live : demo;
+  
+ const stage = useRef(null);
+ const [mode, setMode]= useState('intro'); // intro | dashboard
+ const [phase, setPhase] = useState('title');
+ const [selectedId, setSelectedId] = useState(null);
+ const [dim, setDim] = useState(0);
 
   const enter = useCallback(() => {
     setMode('dashboard');
-    stage.current?.flat();
-    const own = demo.frames[0].points.find((p) => p.track_id === 'own_ship');
-    stage.current?.fly({ ...VIEWS.dashboard, center: own ? [own.lon, own.lat] : VIEWS.dashboard.center }, 2600);
-    stage.current?.interactive(true);
-    demo.seek(0);
-    demo.setRate(1);
+stage.current?.flat();
+
+const own = demo.frames[0].points.find(
+  (p) => p.track_id === 'own_ship'
+);
+
+stage.current?.fly({
+  ...VIEWS.dashboard,
+  center: own
+    ? [own.lon, own.lat]
+    : VIEWS.dashboard.center,
+}, 2600);
+
+stage.current?.interactive(true);
+demo.seek(0);
+demo.setRate(1);
   }, [demo]);
 
   const backToIntro = useCallback(() => {
@@ -54,7 +59,7 @@ export default function App() {
     <div className="relative h-full w-full overflow-hidden">
       <MapStage
         ref={stage}
-        demo={demo}
+        demo={activeData}
         showShips={mode === 'dashboard' || phase === 'gap' || phase === 'solution'}
         showDark={mode === 'dashboard' || phase === 'solution'}
         showRings={mode === 'dashboard' || phase === 'solution' || phase === 'gap'}
@@ -68,7 +73,9 @@ export default function App() {
       {mode === 'intro' && <Intro stage={stage} onPhase={setPhase} onEnter={enter} />}
       {mode === 'dashboard' && demo.ready && (
         <Dashboard
-          demo={demo}
+         demo={activeData}
+         dataMode={dataMode}
+         setDataMode={setDataMode}
           stage={stage}
           selectedId={selectedId}
           onSelect={setSelectedId}

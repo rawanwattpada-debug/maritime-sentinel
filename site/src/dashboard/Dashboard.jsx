@@ -59,7 +59,7 @@ function SceneBar({ demo }) {
   );
 }
 
-export default function Dashboard({ demo, stage, selectedId, onSelect, setDim, onExit }) {
+export default function Dashboard({ demo, stage, selectedId, onSelect, setDim, onExit, dataMode, setDataMode }) {
   const [tab, setTab] = useState('overview');
   const [shown, setShown] = useState(false);
   const [decisions, setDecisions] = useState([]); // operator log
@@ -129,8 +129,29 @@ export default function Dashboard({ demo, stage, selectedId, onSelect, setDim, o
             <span className="flex items-center gap-2 text-muted">
               <span className="h-2 w-2 rounded-full bg-safe" /> النظام يعمل
             </span>
-            <ModeBadge mode={demo.meta.mode} />
-          </div>
+ <div className="flex items-center gap-2">
+  <button
+    onClick={() => setDataMode('replay')}
+    className={`rounded-md px-2 py-1 text-[10px] font-bold transition ${
+      dataMode === 'replay'
+        ? 'bg-teal text-white'
+        : 'bg-panel text-muted'
+    }`}
+  >
+    REPLAY
+  </button>
+  <button
+    onClick={() => setDataMode('live')}
+    className={`rounded-md px-2 py-1 text-[10px] font-bold transition ${
+      dataMode === 'live'
+        ? 'bg-teal text-white'
+        : 'bg-panel text-muted'
+    }`}
+  >
+    LIVE
+  </button>
+ </div>
+      </div>
           <nav className="space-y-1.5 p-3 text-sm">
             {TABS.map(({ id, label, icon: Icon }) => {
               const active = tab === id;

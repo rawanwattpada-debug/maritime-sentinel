@@ -1,0 +1,23 @@
+{
+  "speed": 10,
+  "loop_seconds": 130,
+  "start_offset_min": "auto",
+  "reference": [12.58, 43.33],
+  "scenarios": [
+    {
+      "file": "fishing_cluster.csv",
+      "at_second": 15,
+      "anchor": "place"
+    },
+    {
+      "file": "coordinated_attack.csv",
+      "at_second": 45,
+      "anchor": "follow"
+    },
+    {
+      "file": "single_approach.csv",
+      "at_second": 75,
+      "anchor": "place"
+    }
+  ]
+}

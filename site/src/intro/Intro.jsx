@@ -202,7 +202,7 @@ export default function Intro({ stage, onPhase, onEnter }) {
         </section>
 
         {/* 3. problem (globe flies down) */}
-        <section className="relative flex min-h-[140vh] items-center px-6 sm:px-16">
+        <section className="relative flex min-h-screen items-center px-6 sm:px-16">
           <div className="max-w-xl">
             <p className="reveal mb-6 font-display text-lg font-bold text-amber">{s3.kicker}</p>
             <div className="space-y-4">
@@ -221,7 +221,7 @@ export default function Intro({ stage, onPhase, onEnter }) {
         </section>
 
         {/* 4. gap */}
-        <section className="relative flex min-h-[140vh] items-center px-6 sm:px-16">
+        <section className="relative flex min-h-screen items-center px-6 sm:px-16">
           <div className="max-w-xl">
             <p className="reveal mb-3 font-display text-lg font-bold text-sea">{s4.kicker}</p>
             <h2 className="reveal font-display text-3xl font-extrabold leading-snug text-white sm:text-4xl">{s4.title}</h2>
@@ -244,7 +244,7 @@ export default function Intro({ stage, onPhase, onEnter }) {
         </section>
 
         {/* 5. solution + enter */}
-        <section className="relative flex min-h-[140vh] items-center px-6 sm:px-16">
+        <section className="relative flex min-h-[125vh] items-start px-6 pt-4 pb-12 sm:px-16">
           <div className="max-w-xl">
             <p className="reveal mb-3 font-display text-lg font-bold text-sea">{s5.kicker}</p>
             <h2 className="reveal font-display text-4xl font-extrabold text-white" dir="ltr">MARITIME <span className="text-sea">SENTINEL</span></h2>
@@ -266,7 +266,7 @@ export default function Intro({ stage, onPhase, onEnter }) {
             <p className="reveal mt-6 font-display text-xl font-bold text-amber">{s5.motto}</p>
             <button
               onClick={onEnter}
-              className="reveal group mt-8 inline-flex items-center gap-3 rounded-xl bg-gradient-to-l from-sea to-teal px-8 py-4 font-display text-lg font-extrabold text-abyss shadow-[0_0_40px_rgba(34,211,238,.35)] transition hover:scale-[1.03] hover:shadow-[0_0_60px_rgba(34,211,238,.55)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sea"
+              className="group mt-6 inline-flex items-center gap-2 rounded-lg bg-gradient-to-l from-sea to-teal px-5 py-2.5 font-display text-sm font-bold text-abyss shadow-[0_0_20px_rgba(34,211,238,.2)] transition hover:scale-[1.02] hover:shadow-[0_0_30px_rgba(34,211,238,.35)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sea"
             >
               <Radar className="transition group-hover:rotate-90" />
               {s5.cta}
