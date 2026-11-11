@@ -31,12 +31,14 @@ export default function App() {
     const own = demo.frames[0].points.find((p) => p.track_id === 'own_ship');
     stage.current?.fly({ ...VIEWS.dashboard, center: own ? [own.lon, own.lat] : VIEWS.dashboard.center }, 2600);
     stage.current?.interactive(true);
+    stage.current?.lanes(false);
     demo.seek(0);
     demo.setRate(1);
   }, [demo]);
 
   const backToIntro = useCallback(() => {
     stage.current?.interactive(false);
+    stage.current?.lanes(true);
     setSelectedId(null);
     setDim(0);
     setMode('intro');

@@ -16,10 +16,11 @@ const WAVES = [
 ];
 const G = 9.8;
 
-function waveAt(x, z, t) {
+function waveAt(x, z, t, amp = 1) {
   // returns height at (x, z) using the same Gerstner sum as the shader
   let y = 0;
-  for (const [dx, dz, s, L] of WAVES) {
+  for (const [dx, dz, s0, L] of WAVES) {
+    const s = s0 * amp;
     const len = Math.hypot(dx, dz);
     const k = (2 * Math.PI) / L;
     const c = Math.sqrt(G / k);
@@ -31,12 +32,13 @@ function waveAt(x, z, t) {
 }
 
 const WAVE_GLSL = WAVES.map(
-  ([dx, dz, s, L]) => `wave(vec2(${dx.toFixed(3)}, ${dz.toFixed(3)}), ${s.toFixed(3)}, ${L.toFixed(1)}, p, t, tan, bin)`,
+  ([dx, dz, s, L]) => `wave(vec2(${dx.toFixed(3)}, ${dz.toFixed(3)}), ${s.toFixed(3)} * uAmp, ${L.toFixed(1)}, p, t, tan, bin)`,
 ).join(';\n    p2 += ');
 
 const oceanVert = /* glsl */ `
   uniform float uTime;
   uniform float uFlow;
+  uniform float uAmp;
   varying vec3 vWorld;
   varying vec3 vNormal;
   varying float vHeight;
@@ -78,6 +80,9 @@ const oceanFrag = /* glsl */ `
   uniform vec3 uSunDir;
   uniform vec3 uCam;
   uniform float uTime;
+  uniform float uAmp;
+  uniform float uFogDensity;
+  uniform vec3 uFoam;
   varying vec3 vWorld;
   varying vec3 vNormal;
   varying float vHeight;
@@ -105,11 +110,11 @@ const oceanFrag = /* glsl */ `
     col += uSun * spec * 2.2;
 
     // foam on the crests
-    float foam = smoothstep(1.6, 2.4, vHeight + noise(vWorld.xz * 0.12 + uTime * 0.2) * 0.9);
-    col = mix(col, vec3(0.78, 0.9, 0.95), foam * 0.35);
+    float foam = smoothstep(1.6 * uAmp, 2.4 * uAmp, vHeight + noise(vWorld.xz * 0.12 + uTime * 0.2) * 0.9);
+    col = mix(col, uFoam, foam * 0.28);
 
     float dist = length(uCam - vWorld);
-    float fog = 1.0 - exp(-pow(dist * 0.0023, 1.6));
+    float fog = 1.0 - exp(-pow(dist * uFogDensity, 1.6));
     gl_FragColor = vec4(mix(col, uFog, fog), 1.0);
     #include <colorspace_fragment>
   }
@@ -118,7 +123,7 @@ const oceanFrag = /* glsl */ `
 const skyVert = /* glsl */ `
   varying vec3 vDir;
   void main() {
-    vDir = normalize((modelMatrix * vec4(position, 1.0)).xyz);
+    vDir = normalize(position);   // direction from the camera (the sky dome follows the camera)
     gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0);
   }
 `;
@@ -127,16 +132,115 @@ const skyFrag = /* glsl */ `
   uniform vec3 uHorizon;
   uniform vec3 uGlow;
   uniform vec3 uSunDir;
+  uniform vec3 uCloudLit;
+  uniform vec3 uCloudDark;
+  uniform float uSun;      // how visible the sun (or moon) is
+  uniform float uCloud;    // cloud cover 0..1
+  uniform float uStars;    // 0 day .. 1 clear night
+  uniform float uNight;
+  uniform float uTime;
   varying vec3 vDir;
+
+  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float hash3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+  float noise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
+  }
+  float fbm(vec2 p) {
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; }
+    return v;
+  }
+
   void main() {
-    float h = clamp(vDir.y, 0.0, 1.0);
+    vec3 d = normalize(vDir);
+    float h = clamp(d.y, 0.0, 1.0);
     vec3 col = mix(uHorizon, uTop, pow(h, 0.55));
-    float sun = pow(max(dot(normalize(vDir), uSunDir), 0.0), 18.0);
-    col += uGlow * sun * 0.9;
+
+    // stars: tiny points that twinkle, only above the horizon
+    if (uStars > 0.001) {
+      vec3 sd = d * 170.0;
+      vec3 cell = floor(sd);
+      float r = hash3(cell);
+      float pt = smoothstep(0.24, 0.0, length(fract(sd) - 0.5));
+      float twinkle = 0.55 + 0.45 * sin(uTime * (1.5 + r * 4.0) + r * 80.0);
+      float star = step(0.962, r) * pt * twinkle * (1.2 + 2.8 * fract(r * 13.0));
+      col += vec3(0.85, 0.92, 1.0) * star * uStars * smoothstep(0.0, 0.12, d.y);
+    }
+
+    // sun by day, moon by night: a glow and a disc
+    float sd2 = max(dot(d, uSunDir), 0.0);
+    col += uGlow * pow(sd2, mix(18.0, 60.0, uNight)) * mix(0.9, 0.45, uNight) * uSun;
+    col += uGlow * smoothstep(0.9990, 0.9994, sd2) * mix(2.5, 1.6, uNight) * uSun;
+
+    // clouds drifting slowly across the sky
+    if (uCloud > 0.001 && d.y > 0.0) {
+      vec2 uv = d.xz / (d.y + 0.08) * 0.9 + vec2(uTime * 0.012, uTime * 0.004);
+      float n = fbm(uv * 1.1);
+      float cover = smoothstep(1.0 - uCloud * 0.95, 1.0 - uCloud * 0.95 + 0.3, n);
+      cover *= smoothstep(0.0, 0.1, d.y);
+      vec3 cc = mix(uCloudDark, uCloudLit, clamp(smoothstep(0.35, 0.95, n) + pow(sd2, 6.0) * 0.4, 0.0, 1.0));
+      col = mix(col, cc, cover * 0.92);
+    }
     gl_FragColor = vec4(col, 1.0);
     #include <colorspace_fragment>
   }
 `;
+
+// rain: thin streaks falling around the camera (positions computed on the GPU)
+const rainVert = /* glsl */ `
+  attribute vec3 aSeed;
+  attribute float aEnd;
+  uniform vec3 uCam;
+  uniform float uTime;
+  varying float vA;
+  void main() {
+    float W = 320.0;
+    float H = 150.0;
+    vec3 p;
+    p.x = uCam.x + (fract(aSeed.x + uTime * 0.03) - 0.5) * W;
+    p.z = uCam.z + (aSeed.z - 0.5) * W;
+    p.y = mod(aSeed.y * H - uTime * (52.0 + aSeed.z * 14.0), H) - 25.0;
+    p += vec3(0.7, 3.2, 0.0) * aEnd;
+    vA = smoothstep(-1.0, 3.0, p.y);
+    gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+  }
+`;
+const rainFrag = /* glsl */ `
+  uniform float uAmt;
+  varying float vA;
+  void main() { gl_FragColor = vec4(0.78, 0.86, 0.95, 0.32 * uAmt * vA); }
+`;
+
+function rainStreaks(count = 3500) {
+  const pos = new Float32Array(count * 2 * 3);
+  const seed = new Float32Array(count * 2 * 3);
+  const end = new Float32Array(count * 2);
+  for (let i = 0; i < count; i += 1) {
+    const sx = Math.random(), sy = Math.random(), sz = Math.random();
+    for (let k = 0; k < 2; k += 1) {
+      const j = i * 2 + k;
+      seed.set([sx, sy, sz], j * 3);
+      end[j] = k;
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 3));
+  g.setAttribute('aEnd', new THREE.BufferAttribute(end, 1));
+  const m = new THREE.ShaderMaterial({
+    vertexShader: rainVert,
+    fragmentShader: rainFrag,
+    transparent: true,
+    depthWrite: false,
+    uniforms: { uCam: { value: new THREE.Vector3() }, uTime: { value: 0 }, uAmt: { value: 0 } },
+  });
+  const lines = new THREE.LineSegments(g, m);
+  lines.frustumCulled = false;
+  return lines;
+}
 
 // ---------------------------------------------------------------- vessels
 
@@ -290,8 +394,13 @@ const CAM = [
 const camCurve = new THREE.CatmullRomCurve3(CAM.map((c) => new THREE.Vector3(...c.pos)));
 const lookCurve = new THREE.CatmullRomCurve3(CAM.map((c) => new THREE.Vector3(...c.look)));
 
+// numbers and colours that follow the weather (eased so a change takes a few seconds)
+const LOOK_COLORS = ['foam', 'skyTop', 'skyHorizon', 'glow', 'cloudLit', 'cloudDark', 'fog', 'deep', 'shallow', 'skyRefl', 'spec', 'keyColor'];
+const LOOK_NUMBERS = ['sun', 'cloud', 'stars', 'night', 'fogDensity', 'hemi', 'key', 'exposure', 'rain', 'waves'];
+
 // progressRef.current: 0..1 scroll position through slides 1-2; activeRef.current: render or pause
-export default function OceanScene({ progressRef, activeRef }) {
+// lookRef.current: the weather look to show (see weather.js lookFor)
+export default function OceanScene({ progressRef, activeRef, lookRef }) {
   const host = useRef(null);
 
   useEffect(() => {
@@ -320,6 +429,13 @@ export default function OceanScene({ progressRef, activeRef }) {
           uHorizon: { value: new THREE.Color(0x2a6a86) },
           uGlow: { value: new THREE.Color(0xffc879) },
           uSunDir: { value: sunDir },
+          uCloudLit: { value: new THREE.Color(0xdbe7ef) },
+          uCloudDark: { value: new THREE.Color(0x5d7a90) },
+          uSun: { value: 1 },
+          uCloud: { value: 0 },
+          uStars: { value: 0 },
+          uNight: { value: 0 },
+          uTime: { value: 0 },
         },
       }),
     );
@@ -331,6 +447,9 @@ export default function OceanScene({ progressRef, activeRef }) {
       uniforms: {
         uTime: { value: 0 },
         uFlow: { value: 0 },
+        uAmp: { value: 1 },
+        uFogDensity: { value: 0.0023 },
+        uFoam: { value: new THREE.Color(0xc7e6f2) },
         uDeep: { value: new THREE.Color(0x06263f) },
         uShallow: { value: new THREE.Color(0x13788f) },
         uSky: { value: new THREE.Color(0x3f8199) },
@@ -344,7 +463,11 @@ export default function OceanScene({ progressRef, activeRef }) {
     ocean.rotation.x = -Math.PI / 2;
     scene.add(ocean);
 
-    scene.add(new THREE.HemisphereLight(0x9bd7e6, 0x0b1a2c, 1.1));
+    const hemi = new THREE.HemisphereLight(0x9bd7e6, 0x0b1a2c, 1.1);
+    scene.add(hemi);
+    const rain = rainStreaks();
+    rain.visible = false;
+    scene.add(rain);
     const key = new THREE.DirectionalLight(0xffe2b8, 1.6);
     key.position.copy(sunDir).multiplyScalar(400);
     scene.add(key);
@@ -402,6 +525,44 @@ export default function OceanScene({ progressRef, activeRef }) {
     };
     window.addEventListener('resize', resize);
 
+    // current look, eased toward lookRef.current every frame
+    const cur = {};
+    const setLook = (target, k) => {
+      LOOK_COLORS.forEach((c) => {
+        const to = new THREE.Color(target[c]);
+        if (!cur[c] || k >= 1) cur[c] = to; else cur[c].lerp(to, k);
+      });
+      LOOK_NUMBERS.forEach((n) => {
+        cur[n] = cur[n] == null || k >= 1 ? target[n] : cur[n] + (target[n] - cur[n]) * k;
+      });
+      const su = sky.material.uniforms;
+      su.uTop.value.copy(cur.skyTop);
+      su.uHorizon.value.copy(cur.skyHorizon);
+      su.uGlow.value.copy(cur.glow);
+      su.uCloudLit.value.copy(cur.cloudLit);
+      su.uCloudDark.value.copy(cur.cloudDark);
+      su.uSun.value = cur.sun;
+      su.uCloud.value = cur.cloud;
+      su.uStars.value = cur.stars;
+      su.uNight.value = cur.night;
+      const ou = oceanMat.uniforms;
+      ou.uFog.value.copy(cur.fog);
+      ou.uFoam.value.copy(cur.foam);
+      ou.uDeep.value.copy(cur.deep);
+      ou.uShallow.value.copy(cur.shallow);
+      ou.uSky.value.copy(cur.skyRefl);
+      ou.uSun.value.copy(cur.spec);
+      ou.uFogDensity.value = cur.fogDensity;
+      ou.uAmp.value = cur.waves;
+      hemi.intensity = cur.hemi;
+      key.intensity = cur.key;
+      key.color.copy(cur.keyColor);
+      renderer.toneMappingExposure = cur.exposure;
+      rain.material.uniforms.uAmt.value = cur.rain;
+      rain.visible = cur.rain > 0.01;
+    };
+    if (lookRef?.current) setLook(lookRef.current, 1);
+
     const clock = new THREE.Clock();
     let flow = 0;
     let raf;
@@ -410,11 +571,12 @@ export default function OceanScene({ progressRef, activeRef }) {
     const tmp = new THREE.Vector3();
 
     const bob = (obj, x, z, t, size, amp = 1) => {
-      const y = waveAt(x + flow, z, t);
-      const fwd = waveAt(x + flow + size, z, t);
-      const back = waveAt(x + flow - size, z, t);
-      const port = waveAt(x + flow, z - size * 0.3, t);
-      const stbd = waveAt(x + flow, z + size * 0.3, t);
+      const w = cur.waves ?? 1;
+      const y = waveAt(x + flow, z, t, w);
+      const fwd = waveAt(x + flow + size, z, t, w);
+      const back = waveAt(x + flow - size, z, t, w);
+      const port = waveAt(x + flow, z - size * 0.3, t, w);
+      const stbd = waveAt(x + flow, z + size * 0.3, t, w);
       obj.position.set(x, y * amp, z);
       obj.rotation.z = Math.atan2(fwd - back, size * 2) * amp;
       obj.rotation.x = -Math.atan2(stbd - port, size * 0.6) * amp * 0.8;
@@ -426,6 +588,9 @@ export default function OceanScene({ progressRef, activeRef }) {
       const dt = Math.min(clock.getDelta(), 0.05);
       const t = clock.elapsedTime;
       const p = THREE.MathUtils.clamp(progressRef.current, 0, 1);
+      if (lookRef?.current) setLook(lookRef.current, 1 - Math.exp(-dt * 1.1));
+      sky.material.uniforms.uTime.value = t;
+      rain.material.uniforms.uTime.value = t;
 
       // the ship speeds up as we move toward the bow
       const speed = 6 + p * 12;
@@ -462,13 +627,14 @@ export default function OceanScene({ progressRef, activeRef }) {
       // camera: scroll position along the path + a gentle sway like being on a boat
       camPos.copy(camCurve.getPoint(p));
       camLook.copy(lookCurve.getPoint(p));
-      camPos.y += Math.sin(t * 0.7) * 0.6 + waveAt(camPos.x + flow, camPos.z, t) * 0.25;
+      camPos.y += Math.sin(t * 0.7) * 0.6 + waveAt(camPos.x + flow, camPos.z, t, cur.waves ?? 1) * 0.25;
       camera.position.copy(camPos);
       tmp.copy(camLook);
       tmp.y += Math.sin(t * 0.5) * 0.3;
       camera.lookAt(tmp);
       oceanMat.uniforms.uCam.value.copy(camera.position);
       sky.position.copy(camera.position);
+      rain.material.uniforms.uCam.value.copy(camera.position);
 
       renderer.render(scene, camera);
     };

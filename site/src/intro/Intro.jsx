@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { ChevronDown, ShieldCheck, Radar, Eye, Ship, Route, BrainCircuit } from 'lucide-react';
+import { ChevronDown, ShieldCheck, Radar, Eye, Ship, Route, BrainCircuit, Volume2, VolumeX, CloudSun, Moon, Sun } from 'lucide-react';
 import OceanScene from './OceanScene';
+import Ambience from './ambience';
+import { fetchWeather, lookFor, CONDITIONS, CONDITION_AR } from './weather';
 import { SLIDES, SOURCES, DATA_NOTE } from '../content';
 import { VIEWS } from '../map/MapStage';
 
@@ -22,6 +24,74 @@ const mix = (A, B, f) => ({
   },
 });
 const ease = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+
+const clamp01 = (x) => Math.min(1, Math.max(0, x));
+const SHIP_POS = [43.33, 12.58]; // where the weather is read: our ship's waters
+const SPIN_START = 5; // longitude the globe starts turning from
+
+// slide 3: the globe turns, then the camera travels to the strait and dives down to it
+function globeView(p, spinLon) {
+  const G = VIEWS.globe;
+  const S = VIEWS.strait;
+  const e = ease(clamp01((p - 0.12) / 0.88));
+  const travel = 1 - Math.pow(1 - e, 2.5); // move over the sea first...
+  const dive = Math.pow(e, 1.8); // ...then come down
+  const dLon = ((((S.center[0] - spinLon) % 360) + 540) % 360) - 180;
+  const arc = Math.sin(Math.PI * e);
+  return {
+    center: [spinLon + dLon * travel, lerp(G.center[1], S.center[1], travel)],
+    zoom: lerp(G.zoom, S.zoom, dive),
+    pitch: 48 * Math.pow(arc, 1.3),
+    bearing: -32 * arc,
+    padding: { top: 0, bottom: 0, left: 0, right: lerp(0, S.padding?.right || 0, travel) },
+  };
+}
+
+// small, quiet controls for the hero: sea sound + weather (real by default, presenter can switch)
+function HeroControls({ visible, sound, setSound, real, override, setOverride }) {
+  const [open, setOpen] = useState(false);
+  const shown = override || real;
+  const label = override
+    ? `عرض: ${CONDITION_AR[override.condition]} · ${override.night ? 'ليل' : 'نهار'}`
+    : real
+      ? `الطقس الآن عند موقع السفينة · ${Math.round(real.tempC)}° · ${CONDITION_AR[real.condition]}${real.waveM != null ? ` · موج ${real.waveM.toFixed(1)} م` : ''}`
+      : 'الطقس: صافٍ (بدون اتصال)';
+  const pick = (patch) => setOverride({ condition: shown?.condition || 'clear', night: !!shown?.night, ...patch });
+  return (
+    <div className={`fixed bottom-5 left-6 z-30 flex flex-col items-start gap-2 transition-opacity duration-700 ${visible ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
+      {open && (
+        <div className="glass flex flex-wrap items-center gap-1.5 rounded-xl p-2 text-xs">
+          <button onClick={() => setOverride(null)} className={`rounded-md px-2.5 py-1.5 ${!override ? 'bg-sea/20 text-sea' : 'text-ink/80 hover:bg-white/10'}`}>تلقائي</button>
+          {CONDITIONS.map((c) => (
+            <button key={c} onClick={() => pick({ condition: c })} className={`rounded-md px-2.5 py-1.5 ${override?.condition === c ? 'bg-sea/20 text-sea' : 'text-ink/80 hover:bg-white/10'}`}>
+              {CONDITION_AR[c]}
+            </button>
+          ))}
+          <button onClick={() => pick({ night: !shown?.night })} className="flex items-center gap-1 rounded-md px-2.5 py-1.5 text-ink/80 hover:bg-white/10">
+            {shown?.night ? <Sun size={13} /> : <Moon size={13} />} {shown?.night ? 'نهار' : 'ليل'}
+          </button>
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setSound(!sound)}
+          aria-label={sound ? 'إيقاف صوت البحر' : 'تشغيل صوت البحر'}
+          className="glass flex items-center gap-2 rounded-full px-3.5 py-2 text-xs text-ink/90 transition hover:text-white"
+        >
+          {sound ? <Volume2 size={15} className="text-sea" /> : <VolumeX size={15} />}
+          {sound ? 'صوت البحر' : 'تشغيل صوت البحر'}
+        </button>
+        <button
+          onClick={() => setOpen(!open)}
+          aria-label="الطقس"
+          className="flex items-center gap-1.5 rounded-full px-2.5 py-2 text-[11px] text-ink/45 transition hover:bg-white/5 hover:text-ink/90"
+        >
+          <CloudSun size={14} /> {label}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const POINT_ICONS = [Ship, Route, BrainCircuit];
 const SOLUTION_ICONS = [Radar, ShieldCheck, Eye];
@@ -81,6 +151,34 @@ export default function Intro({ stage, onPhase, onEnter }) {
   const heroProgress = useRef(0);
   const heroActive = useRef(true);
   const [heroOn, setHeroOn] = useState(true);
+  const globeP = useRef(0);
+  const globeOn = useRef(false);
+  const flatP = useRef(0);
+
+  // weather: real by default; the presenter can override it (also keys W and N)
+  const [real, setReal] = useState(null);
+  const [override, setOverride] = useState(null);
+  const lookRef = useRef(lookFor());
+  useEffect(() => {
+    let alive = true;
+    fetchWeather(SHIP_POS[1], SHIP_POS[0]).then((w) => alive && w && setReal(w)).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const shown = override || real || { condition: 'clear', night: false };
+  lookRef.current = lookFor({ ...shown, waveM: real?.waveM });
+
+  // sea sound: only after the visitor turns it on; fades out when the ocean hands over to the map
+  const amb = useRef(null);
+  const [sound, setSound] = useState(false);
+  useEffect(() => {
+    if (sound) {
+      if (!amb.current) amb.current = new Ambience();
+      amb.current.start();
+    }
+    amb.current?.fadeTo(sound && heroOn ? 0.9 : 0, sound && heroOn ? 2.5 : 1.5);
+  }, [sound, heroOn]);
+  useEffect(() => { amb.current?.setWeather({ rain: lookRef.current.rain, waves: lookRef.current.waves }); });
+  useEffect(() => () => amb.current?.stop(), []);
 
   // camera choreography, scrubbed by scroll
   useEffect(() => {
@@ -127,25 +225,18 @@ export default function Intro({ stage, onPhase, onEnter }) {
         trigger: secs[2],
         scroller: root,
         start: 'top 35%',
-        onEnter: () => { setHeroOn(false); setTimeout(() => { heroActive.current = false; }, 1200); },
-        onLeaveBack: () => { heroActive.current = true; setHeroOn(true); },
+        onEnter: () => { globeOn.current = true; setHeroOn(false); setTimeout(() => { heroActive.current = false; }, 1200); },
+        onLeaveBack: () => { globeOn.current = false; heroActive.current = true; setHeroOn(true); },
       });
       // slide 3: the globe turns for a moment, then the camera comes down to the strait
       ScrollTrigger.create({
         trigger: secs[2],
         scroller: root,
         start: 'top 35%',
-        end: 'bottom center',
+        end: 'bottom bottom',
         scrub: true,
         onUpdate: (self) => {
-          stage.current?.globe();
-          const p = self.progress;
-          if (p < 0.3) {
-            const spin = p / 0.3;
-            stage.current?.jump({ ...VIEWS.globe, center: [VIEWS.globe.center[0] - 70 + spin * 70, VIEWS.globe.center[1]] });
-          } else {
-            stage.current?.jump(mix(VIEWS.globe, VIEWS.strait, ease((p - 0.3) / 0.7)));
-          }
+          globeP.current = self.progress; // the camera itself is driven by the loop below
         },
       });
       // slide 4: flatten and tilt into 3D
@@ -156,6 +247,8 @@ export default function Intro({ stage, onPhase, onEnter }) {
         end: 'center center',
         scrub: true,
         onUpdate: (self) => {
+          flatP.current = self.progress;
+          if (self.progress <= 0.02) return; // the globe loop is still in charge
           if (self.progress > 0.02) stage.current?.flat();
           else stage.current?.globe();
           stage.current?.jump(mix(VIEWS.strait, VIEWS.tilted, ease(self.progress)));
@@ -174,8 +267,27 @@ export default function Intro({ stage, onPhase, onEnter }) {
         },
       });
     }, root);
-    stage.current?.jump({ ...VIEWS.globe, center: [VIEWS.globe.center[0] - 70, VIEWS.globe.center[1]] });
-    return () => ctx.revert();
+    stage.current?.jump({ ...VIEWS.globe, center: [SPIN_START, VIEWS.globe.center[1]] });
+    stage.current?.lanes(true);
+
+    // globe loop: keeps turning slowly until the visitor scrolls, then flies to the strait
+    let raf;
+    let last = performance.now();
+    let spinLon = SPIN_START;
+    const loop = (now) => {
+      raf = requestAnimationFrame(loop);
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      if (!globeOn.current || flatP.current > 0.02) return;
+      if (globeP.current < 0.12) spinLon += dt * 6 * (1 - globeP.current / 0.12);
+      stage.current?.globe();
+      stage.current?.jump(globeView(globeP.current, spinLon));
+    };
+    raf = requestAnimationFrame(loop);
+    return () => {
+      cancelAnimationFrame(raf);
+      ctx.revert();
+    };
   }, [stage, onPhase]);
 
   const goTo = (i) => scroller.current?.querySelectorAll('section')[i]?.scrollIntoView({ behavior: 'smooth' });
@@ -188,12 +300,25 @@ export default function Intro({ stage, onPhase, onEnter }) {
       secs[next].scrollIntoView({ behavior: 'smooth' });
     };
     const onKey = (e) => {
+      // presenter shortcuts for the weather: W = next weather, N = day / night
+      if (e.key === 'w' || e.key === 'W') {
+        setOverride((o) => {
+          const base = o || real || { condition: 'clear', night: false };
+          return { ...base, condition: CONDITIONS[(CONDITIONS.indexOf(base.condition) + 1) % CONDITIONS.length] };
+        });
+      }
+      if (e.key === 'n' || e.key === 'N') {
+        setOverride((o) => {
+          const base = o || real || { condition: 'clear', night: false };
+          return { ...base, night: !base.night };
+        });
+      }
       if (['ArrowDown', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); go(1); }
       if (['ArrowUp', 'PageUp'].includes(e.key)) { e.preventDefault(); go(-1); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [section]);
+  }, [section, real]);
 
   const [s1, s2, s3, s4, s5] = SLIDES;
 
@@ -201,7 +326,7 @@ export default function Intro({ stage, onPhase, onEnter }) {
     <>
       {/* cinematic ocean behind slides 1-2 */}
       <div className={`fixed inset-0 transition-opacity duration-1000 ${heroOn ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
-        <OceanScene progressRef={heroProgress} activeRef={heroActive} />
+        <OceanScene progressRef={heroProgress} activeRef={heroActive} lookRef={lookRef} />
         <div
           className="absolute inset-0"
           style={{
@@ -211,6 +336,7 @@ export default function Intro({ stage, onPhase, onEnter }) {
         />
       </div>
       <Header section={section} go={goTo} onEnter={onEnter} />
+      <HeroControls visible={heroOn} sound={sound} setSound={setSound} real={real} override={override} setOverride={setOverride} />
 
       {/* progress dots */}
       <nav className="fixed left-6 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-3" aria-label="الشرائح">
