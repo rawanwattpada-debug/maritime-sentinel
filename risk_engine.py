@@ -57,7 +57,8 @@ CONFIG = {
     "min_threat_kn": 6,           # أبطأ من هذا (صيد/تعويم) ما يُعدّ اقتراباً عدائياً
     "approach_cpa_nm": 2.0,       # لازم مساره فعلاً يمر قريباً من السفينة
     "sustain_tolerance_nm": 0.05, # تذبذب الموقع (خطأ الرادار ~90 م) ما يقطع "الاقتراب المتواصل"
-    "level_hold_s": 30,           # التنبيه يطلع فوراً، بس ما ينزل إلا إذا ظل أقل 30 ثانية (يمنع الرمش)
+    "level_hold_s": 30,
+    "course_window_s": 30,        # الاتجاه والسرعة من متوسط آخر 30 ثانية (يلغي تذبذب قراءة الرادار)           # التنبيه يطلع فوراً، بس ما ينزل إلا إذا ظل أقل 30 ثانية (يمنع الرمش)
 }
 
 DEFAULT_MODEL_PATH = Path("models/iforest.joblib")
@@ -204,9 +205,16 @@ class RiskEngine:
         x, y = to_xy_nm(cur.lat, cur.lon, own["lat"], own["lon"])
         rng = math.hypot(x, y)
         brg_to_ship = bearing_deg(-x, -y)                      # من الهدف إلى سفينتنا
-        head_err = angle_diff(cur.cog_deg, brg_to_ship)
+        # الحركة من متوسط آخر course_window_s ثانية بدل قراءة وحدة: قراءة الرادار للاتجاه فيها
+        # خطأ بسيط، وعلى بعد كيلومترات هذا الخطأ يغيّر "وين بيمر القارب" كثير
+        recent = [p for p in pts if (cur.timestamp - p.timestamp).total_seconds() <= c["course_window_s"]]
+        vs = [velocity_nm_per_h(p.sog_kn, p.cog_deg) for p in recent]
+        tvx = float(np.mean([v[0] for v in vs]))
+        tvy = float(np.mean([v[1] for v in vs]))
+        avg_sog = math.hypot(tvx, tvy)
+        avg_cog = bearing_deg(tvx, tvy) if avg_sog > 0.5 else cur.cog_deg
+        head_err = angle_diff(avg_cog, brg_to_ship)
 
-        tvx, tvy = velocity_nm_per_h(cur.sog_kn, cur.cog_deg)
         ovx, ovy = velocity_nm_per_h(own["sog_kn"], own["cog_deg"])
         cpa, tcpa = cpa_tcpa((x, y), (tvx - ovx, tvy - ovy))
 
