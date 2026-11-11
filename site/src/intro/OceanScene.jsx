@@ -108,7 +108,7 @@ const oceanFrag = /* glsl */ `
 
     vec3 H = normalize(uSunDir + V);
     float spec = pow(max(dot(n, H), 0.0), 220.0);
-    col += uSun * spec * 2.2;
+    col += uSun * spec * 2.2 * (0.15 + 0.85 * uSheen);
     // the sun's glittering path on the sea
     float glit = pow(max(dot(n, H), 0.0), 38.0) * (0.6 + 0.8 * noise(vWorld.xz * 0.9 + uTime * 1.5));
     col += uSun * glit * 0.45 * uSheen;
@@ -176,8 +176,10 @@ const skyFrag = /* glsl */ `
 
     // sun by day, moon by night: a glow and a disc
     float sd2 = max(dot(d, uSunDir), 0.0);
-    col += uGlow * pow(sd2, mix(18.0, 60.0, uNight)) * mix(0.9, 0.45, uNight) * uSun;
-    col += uGlow * smoothstep(0.99990, 0.99995, sd2) * mix(5.0, 1.8, uNight) * uSun;   // the disc
+    // the sun (day only: the night sky has stars and no moon)
+    float day = 1.0 - smoothstep(0.0, 0.4, uNight);
+    col += uGlow * pow(sd2, 18.0) * 0.9 * uSun * day;
+    col += uGlow * smoothstep(0.99990, 0.99995, sd2) * 5.0 * uSun * day;   // the disc
     col += uGlow * (pow(sd2, 14.0) * 0.22 + pow(sd2, 900.0) * 0.8) * (1.0 - uNight) * uSun;  // warm halo + bright corona
 
     // clouds drifting slowly across the sky

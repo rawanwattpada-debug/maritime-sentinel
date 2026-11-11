@@ -4,7 +4,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { ChevronDown, ShieldCheck, Radar, Eye, Ship, Route, BrainCircuit, Volume2, VolumeX, CloudSun, Moon, Sun } from 'lucide-react';
 import OceanScene from './OceanScene';
 import Ambience, { SOUNDS } from './ambience';
-import { fetchWeather, lookFor, CONDITIONS, CONDITION_AR } from './weather';
+import { fetchWeather, lookFor, fitMode, CONDITION_AR, DAY_OPTIONS, NIGHT_OPTIONS } from './weather';
 import { SLIDES, SOURCES, DATA_NOTE } from '../content';
 import { VIEWS } from '../map/MapStage';
 
@@ -47,44 +47,47 @@ function globeView(p, spinLon) {
   };
 }
 
-// small, quiet controls for the hero: sea sound (with a list) + weather
+// small, quiet controls for the hero: sea sound (waves / rain) + weather
 // (real by default; the presenter picks day or night, then the weather under it)
+const realLabel = (real) =>
+  real
+    ? `الطقس الآن عند موقع السفينة · ${Math.round(real.tempC)}° · ${real.night ? 'ليل' : 'نهار'} · ${CONDITION_AR[real.condition]}${real.waveM != null ? ` · ارتفاع الموج ${real.waveM.toFixed(1)} م` : ''}`
+    : 'الطقس الحالي عند موقع السفينة غير متاح (بدون اتصال)';
+
 function HeroControls({ visible, sound, setSound, soundId, setSoundId, real, override, setOverride }) {
   const [open, setOpen] = useState(null); // 'weather' | 'sound' | null
-  const shown = override || real || { condition: 'clear', night: false };
-  const label = override
-    ? `${override.night ? 'ليل' : 'نهار'} · ${CONDITION_AR[override.condition]}`
-    : real
-      ? `الطقس الآن عند موقع السفينة · ${Math.round(real.tempC)}° · ${real.night ? 'ليل' : 'نهار'} · ${CONDITION_AR[real.condition]}${real.waveM != null ? ` · موج ${real.waveM.toFixed(1)} م` : ''}`
-      : 'نهار · صافٍ (بدون اتصال)';
-  const pick = (patch) => setOverride({ condition: shown.condition, night: !!shown.night, ...patch });
+  const shown = fitMode(override || real || { condition: 'clear', night: false });
+  const options = shown.night ? NIGHT_OPTIONS : DAY_OPTIONS;
+  const pick = (patch) => setOverride(fitMode({ condition: shown.condition, night: shown.night, ...patch }));
+  // at night "clear" is the base (just stars): clicking the chosen weather again goes back to it
+  const pickCondition = (c) => pick({ condition: shown.night && shown.condition === c ? 'clear' : c });
   const chip = (on) => `rounded-md px-3 py-1.5 transition ${on ? 'bg-sea/20 text-sea' : 'text-ink/80 hover:bg-white/10'}`;
   const toggle = (k) => setOpen(open === k ? null : k);
   return (
     <div className={`fixed bottom-5 left-6 z-30 flex flex-col items-start gap-2 transition-opacity duration-700 ${visible ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
       {open === 'weather' && (
-        <div className="glass w-[19rem] space-y-2 rounded-xl p-2.5 text-xs">
+        <div className="glass w-[17rem] space-y-2 rounded-xl p-2.5 text-xs">
           <div className="grid grid-cols-2 gap-1 rounded-lg bg-black/20 p-1">
             {[[false, 'نهار', Sun], [true, 'ليل', Moon]].map(([n, t, Icon]) => (
-              <button key={t} onClick={() => pick({ night: n })} className={`flex items-center justify-center gap-1.5 rounded-md py-2 text-sm font-semibold transition ${!!shown.night === n ? 'bg-sea text-abyss' : 'text-ink/80 hover:bg-white/10'}`}>
+              <button key={t} onClick={() => pick({ night: n })} className={`flex items-center justify-center gap-1.5 rounded-md py-2 text-sm font-semibold transition ${shown.night === n ? 'bg-sea text-abyss' : 'text-ink/80 hover:bg-white/10'}`}>
                 <Icon size={15} /> {t}
               </button>
             ))}
           </div>
-          <div className="grid grid-cols-4 gap-1">
-            {CONDITIONS.map((c) => (
-              <button key={c} onClick={() => pick({ condition: c })} className={chip(shown.condition === c)}>{CONDITION_AR[c]}</button>
+          <div className="grid grid-cols-3 gap-1">
+            {options.map((c) => (
+              <button key={c} onClick={() => pickCondition(c)} className={chip(shown.condition === c)}>{CONDITION_AR[c]}</button>
             ))}
           </div>
           <button onClick={() => setOverride(null)} className={`w-full ${chip(!override)}`}>تلقائي: الطقس الحقيقي الآن</button>
         </div>
       )}
       {open === 'sound' && (
-        <div className="glass w-56 rounded-xl p-1.5 text-xs">
+        <div className="glass w-40 rounded-xl p-1.5 text-xs">
           {SOUNDS.map((x) => (
             <button
               key={x.id}
-              onClick={() => { setSoundId(x.id); setSound(true); }}
+              onClick={() => { setSoundId(x.id); setSound(true); setOpen(null); }}
               className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-right ${chip(soundId === x.id)}`}
             >
               {x.label}
@@ -97,11 +100,11 @@ function HeroControls({ visible, sound, setSound, soundId, setSoundId, real, ove
         <div className="glass flex items-center rounded-full text-xs text-ink/90">
           <button
             onClick={() => setSound(!sound)}
-            aria-label={sound ? 'إيقاف صوت البحر' : 'تشغيل صوت البحر'}
+            aria-label={sound ? 'إيقاف الصوت' : 'تشغيل الصوت'}
             className="flex items-center gap-2 rounded-full py-2 ps-3.5 pe-2 transition hover:text-white"
           >
             {sound ? <Volume2 size={15} className="text-sea" /> : <VolumeX size={15} />}
-            {sound ? SOUNDS.find((x) => x.id === soundId)?.label : 'تشغيل صوت البحر'}
+            {sound ? `صوت: ${SOUNDS.find((x) => x.id === soundId)?.label}` : 'تشغيل الصوت'}
           </button>
           <button onClick={() => toggle('sound')} aria-label="اختيار الصوت" className="rounded-full py-2 pe-3 ps-1.5 text-ink/60 hover:text-white">
             <ChevronDown size={14} className={open === 'sound' ? 'rotate-180' : ''} />
@@ -110,9 +113,9 @@ function HeroControls({ visible, sound, setSound, soundId, setSoundId, real, ove
         <button
           onClick={() => toggle('weather')}
           aria-label="الطقس"
-          className="flex items-center gap-1.5 rounded-full px-2.5 py-2 text-[11px] text-ink/45 transition hover:bg-white/5 hover:text-ink/90"
+          className="flex items-center gap-1.5 rounded-full px-2.5 py-2 text-[11px] text-ink/55 transition hover:bg-white/5 hover:text-ink/90"
         >
-          <CloudSun size={14} /> {label}
+          <CloudSun size={14} /> {realLabel(real)}
         </button>
       </div>
     </div>
@@ -190,13 +193,13 @@ export default function Intro({ stage, onPhase, onEnter }) {
     fetchWeather(SHIP_POS[1], SHIP_POS[0]).then((w) => alive && w && setReal(w)).catch(() => {});
     return () => { alive = false; };
   }, []);
-  const shown = override || real || { condition: 'clear', night: false };
+  const shown = fitMode(override || real || { condition: 'clear', night: false });
   lookRef.current = lookFor({ ...shown, waveM: real?.waveM });
 
   // sea sound: only after the visitor turns it on; fades out when the ocean hands over to the map
   const amb = useRef(null);
   const [sound, setSound] = useState(false);
-  const [soundId, setSoundId] = useState('auto');
+  const [soundId, setSoundId] = useState('waves');
   useEffect(() => { amb.current?.setSound(soundId); }, [soundId]);
   useEffect(() => {
     if (sound) {
@@ -332,14 +335,15 @@ export default function Intro({ stage, onPhase, onEnter }) {
       // presenter shortcuts for the weather: W = next weather, N = day / night
       if (e.key === 'w' || e.key === 'W') {
         setOverride((o) => {
-          const base = o || real || { condition: 'clear', night: false };
-          return { ...base, condition: CONDITIONS[(CONDITIONS.indexOf(base.condition) + 1) % CONDITIONS.length] };
+          const base = fitMode(o || real || { condition: 'clear', night: false });
+          const list = base.night ? ['clear', ...NIGHT_OPTIONS] : DAY_OPTIONS;
+          return { ...base, condition: list[(list.indexOf(base.condition) + 1) % list.length] };
         });
       }
       if (e.key === 'n' || e.key === 'N') {
         setOverride((o) => {
           const base = o || real || { condition: 'clear', night: false };
-          return { ...base, night: !base.night };
+          return fitMode({ ...base, night: !base.night });
         });
       }
       if (['ArrowDown', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); go(1); }

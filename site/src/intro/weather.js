@@ -2,6 +2,15 @@
 // If the service can't be reached (no internet at the venue) we fall back to a clear day.
 
 export const CONDITIONS = ['clear', 'cloudy', 'rain', 'fog'];
+// what the presenter can pick under each mode (a clear night = just stars, the base of 'night')
+export const DAY_OPTIONS = ['clear', 'cloudy', 'fog'];
+export const NIGHT_OPTIONS = ['cloudy', 'rain', 'fog'];
+
+// keep a weather inside what each mode offers: no rain by day
+export function fitMode({ condition = 'clear', night = false, ...rest } = {}) {
+  if (!night && condition === 'rain') condition = 'cloudy';
+  return { ...rest, condition, night };
+}
 export const CONDITION_AR = { clear: 'صافٍ', cloudy: 'غائم', rain: 'ممطر', fog: 'ضباب' };
 
 const FORECAST = 'https://api.open-meteo.com/v1/forecast';
@@ -74,24 +83,24 @@ const DAY = {
 
 const NIGHT = {
   clear: {
-    skyTop: 0x01030a, skyHorizon: 0x071423, glow: 0x9fb7d9, sun: 1, cloud: 0.06, cloudLit: 0x2a3a4e, cloudDark: 0x0b1420,
-    fog: 0x07121f, fogDensity: 0.0026, deep: 0x020a14, shallow: 0x0a2a3c, skyRefl: 0x0f2438, spec: 0xbcd0ee,
-    hemi: 0.35, key: 0.55, keyColor: 0x9fb7d9, exposure: 1.0, rain: 0, stars: 1, foam: 0x2c4258, sheen: 0.45,
+    skyTop: 0x01030a, skyHorizon: 0x071423, glow: 0x9fb7d9, sun: 0, cloud: 0.06, cloudLit: 0x2a3a4e, cloudDark: 0x0b1420,
+    fog: 0x07121f, fogDensity: 0.0026, deep: 0x020a14, shallow: 0x0a2a3c, skyRefl: 0x0f2438, spec: 0x5d7391,
+    hemi: 0.35, key: 0.55, keyColor: 0x9fb7d9, exposure: 1.0, rain: 0, stars: 1, foam: 0x2c4258, sheen: 0.08,
   },
   cloudy: {
-    skyTop: 0x060b12, skyHorizon: 0x172331, glow: 0x5a6b80, sun: 0.1, cloud: 0.85, cloudLit: 0x26323f, cloudDark: 0x0a1018,
+    skyTop: 0x060b12, skyHorizon: 0x172331, glow: 0x5a6b80, sun: 0, cloud: 0.85, cloudLit: 0x26323f, cloudDark: 0x0a1018,
     fog: 0x0e1824, fogDensity: 0.0032, deep: 0x020a12, shallow: 0x0c2433, skyRefl: 0x172331, spec: 0x6b7c90,
-    hemi: 0.3, key: 0.25, keyColor: 0x8fa3bd, exposure: 1.0, rain: 0, stars: 0.12, foam: 0x223140, sheen: 0.05,
+    hemi: 0.3, key: 0.25, keyColor: 0x8fa3bd, exposure: 1.0, rain: 0, stars: 0.12, foam: 0x223140, sheen: 0.08,
   },
   rain: {
     skyTop: 0x04080e, skyHorizon: 0x111b26, glow: 0x46556a, sun: 0, cloud: 1, cloudLit: 0x1d2833, cloudDark: 0x070c12,
     fog: 0x0b141e, fogDensity: 0.005, deep: 0x01070f, shallow: 0x0a1f2b, skyRefl: 0x111b26, spec: 0x55667a,
-    hemi: 0.25, key: 0.15, keyColor: 0x8fa3bd, exposure: 1.0, rain: 1, stars: 0, foam: 0x1b2733, sheen: 0.0,
+    hemi: 0.25, key: 0.15, keyColor: 0x8fa3bd, exposure: 1.0, rain: 1, stars: 0, foam: 0x1b2733, sheen: 0.08,
   },
   fog: {
-    skyTop: 0x0f1822, skyHorizon: 0x26333f, glow: 0x6b7a8a, sun: 0.1, cloud: 0.4, cloudLit: 0x2c3946, cloudDark: 0x121b24,
+    skyTop: 0x0f1822, skyHorizon: 0x26333f, glow: 0x6b7a8a, sun: 0, cloud: 0.4, cloudLit: 0x2c3946, cloudDark: 0x121b24,
     fog: 0x1f2b37, fogDensity: 0.009, deep: 0x041019, shallow: 0x123040, skyRefl: 0x26333f, spec: 0x6b7a8a,
-    hemi: 0.35, key: 0.2, keyColor: 0x8fa3bd, exposure: 1.0, rain: 0, stars: 0, foam: 0x34424f, sheen: 0.05,
+    hemi: 0.35, key: 0.2, keyColor: 0x8fa3bd, exposure: 1.0, rain: 0, stars: 0, foam: 0x34424f, sheen: 0.08,
   },
 };
 
@@ -102,6 +111,7 @@ export function waveScale(waveM, condition) {
 }
 
 export function lookFor({ condition = 'clear', night = false, waveM = null } = {}) {
+  ({ condition, night } = fitMode({ condition, night }));
   const base = (night ? NIGHT : DAY)[condition] || DAY.clear;
   return { ...base, waves: waveScale(waveM, condition), night: night ? 1 : 0 };
 }

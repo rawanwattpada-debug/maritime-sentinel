@@ -21,17 +21,11 @@ function noiseBuffer(ctx, seconds, brown) {
   return buf;
 }
 
-// sounds the visitor can choose from; 'auto' follows the weather on screen
-// rumble: deep sea, swell: wave size, rate: how often waves come, bright: wash hiss,
-// wind: wind howl, rain: rain hiss
+// Two sounds: waves and rain. Each plays a recording if one is placed in
+// site/public/media/sound/ (waves.mp3, rain.mp3); otherwise a sound made in code.
 export const SOUNDS = [
-  { id: 'auto', label: 'تلقائي (حسب الطقس)' },
-  { id: 'calm', label: 'أمواج هادئة', rumble: 0.22, swell: 0.55, rate: 0.75, bright: 0.65, wind: 0, rain: 0 },
-  { id: 'waves', label: 'أمواج البحر', rumble: 0.32, swell: 1, rate: 1, bright: 1, wind: 0.04, rain: 0 },
-  { id: 'deep', label: 'هدير البحر المفتوح', rumble: 0.6, swell: 0.7, rate: 0.7, bright: 0.55, wind: 0.08, rain: 0 },
-  { id: 'wind', label: 'رياح بحرية', rumble: 0.25, swell: 0.75, rate: 0.9, bright: 0.85, wind: 0.42, rain: 0 },
-  { id: 'rain', label: 'مطر على البحر', rumble: 0.3, swell: 0.8, rate: 1, bright: 0.9, wind: 0.1, rain: 0.3 },
-  { id: 'storm', label: 'بحر عاصف', rumble: 0.5, swell: 1.5, rate: 1.4, bright: 1.4, wind: 0.38, rain: 0.18 },
+  { id: 'waves', label: 'أمواج', file: 'media/sound/waves.mp3', rumble: 0.32, swell: 1, rate: 1, bright: 1, wind: 0.04, rain: 0 },
+  { id: 'rain', label: 'مطر', file: 'media/sound/rain.mp3', rumble: 0.28, swell: 0.7, rate: 0.9, bright: 0.8, wind: 0.08, rain: 0.32 },
 ];
 
 export default class Ambience {
@@ -39,21 +33,62 @@ export default class Ambience {
     this.ctx = null;
     this.level = 0; // target master volume
     this.weather = { rain: 0, waves: 1 };
-    this.sound = 'auto';
+    this.sound = 'waves';
+    this.files = {}; // id -> decoded recording (or null if there is none)
     this.timer = null;
   }
 
   // the sound settings in use now
   params() {
-    const fixed = SOUNDS.find((x) => x.id === this.sound && x.id !== 'auto');
-    if (fixed) return fixed;
-    const { rain, waves } = this.weather;
-    return { rumble: 0.25 + 0.15 * Math.min(1.6, waves), swell: waves, rate: waves, bright: waves, wind: rain ? 0.12 : 0.04, rain: rain * 0.22 };
+    return SOUNDS.find((x) => x.id === this.sound) || SOUNDS[0];
   }
 
   setSound(id) {
     this.sound = id;
     this.apply();
+    this.playFile();
+  }
+
+  // load a recording once; a missing file (or a page served instead) just means "use the code sound"
+  async loadFile(id) {
+    if (id in this.files) return this.files[id];
+    this.files[id] = null;
+    const def = SOUNDS.find((x) => x.id === id);
+    try {
+      const r = await fetch(def.file);
+      if (!r.ok || !(r.headers.get('content-type') || '').startsWith('audio')) return null;
+      this.files[id] = await this.ctx.decodeAudioData(await r.arrayBuffer());
+    } catch {
+      this.files[id] = null;
+    }
+    return this.files[id];
+  }
+
+  // switch between a recording (if there is one) and the sound made in code
+  async playFile() {
+    if (!this.ctx) return;
+    const id = this.sound;
+    const buf = await this.loadFile(id);
+    if (!this.ctx || id !== this.sound) return;
+    const t = this.ctx.currentTime;
+    if (this.fileSrc) {
+      const old = this.fileSrc;
+      old.gain.gain.setTargetAtTime(0, t, 0.5);
+      setTimeout(() => old.src.stop(), 2500);
+      this.fileSrc = null;
+    }
+    if (buf) {
+      const src = this.ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      const gain = this.ctx.createGain();
+      gain.gain.value = 0;
+      src.connect(gain).connect(this.master);
+      src.start();
+      gain.gain.setTargetAtTime(1, t, 0.8);
+      this.fileSrc = { src, gain };
+    }
+    this.proc.gain.setTargetAtTime(buf ? 0 : 1, t, 0.6);
   }
 
   start() {
@@ -76,6 +111,8 @@ export default class Ambience {
     this.master = ctx.createGain();
     this.master.gain.value = 0;
     this.master.connect(ctx.destination);
+    this.proc = ctx.createGain(); // everything made in code goes through here
+    this.proc.connect(this.master);
 
     // deep rumble of open water
     const rumbleF = ctx.createBiquadFilter();
@@ -83,7 +120,7 @@ export default class Ambience {
     rumbleF.frequency.value = 220;
     this.rumble = ctx.createGain();
     this.rumble.gain.value = 0.35;
-    loop(brown).connect(rumbleF).connect(this.rumble).connect(this.master);
+    loop(brown).connect(rumbleF).connect(this.rumble).connect(this.proc);
 
     // two wave layers (left / right) that swell and wash
     this.layers = [-0.6, 0.6].map((pan) => {
@@ -95,7 +132,7 @@ export default class Ambience {
       g.gain.value = 0.05;
       const p = ctx.createStereoPanner();
       p.pan.value = pan;
-      loop(brown).connect(f).connect(g).connect(p).connect(this.master);
+      loop(brown).connect(f).connect(g).connect(p).connect(this.proc);
       return { f, g };
     });
 
@@ -108,7 +145,7 @@ export default class Ambience {
     lp.frequency.value = 9000;
     this.rain = ctx.createGain();
     this.rain.gain.value = 0;
-    loop(white).connect(hp).connect(lp).connect(this.rain).connect(this.master);
+    loop(white).connect(hp).connect(lp).connect(this.rain).connect(this.proc);
 
     // wind: a narrow band of noise whose pitch and strength wander
     this.windF = ctx.createBiquadFilter();
@@ -119,11 +156,12 @@ export default class Ambience {
     this.wind.gain.value = 0;
     this.windLevel = ctx.createGain();
     this.windLevel.gain.value = 0;
-    loop(white).connect(this.windF).connect(this.wind).connect(this.windLevel).connect(this.master);
+    loop(white).connect(this.windF).connect(this.wind).connect(this.windLevel).connect(this.proc);
     this.gust();
 
     this.layers.forEach((l, i) => setTimeout(() => this.swell(l), i * 2600));
     this.apply();
+    this.playFile();
     this.fadeTo(this.level, 2.5);
   }
 
