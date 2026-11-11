@@ -225,3 +225,6 @@ data/*.html
 # Big data files (the replay recording is tracked on purpose)
 data/*.parquet
 !data/ais_live.parquet
+
+# Claude Code design skills (installed locally, not part of the project)
+.claude/

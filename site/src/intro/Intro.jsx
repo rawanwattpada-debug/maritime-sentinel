@@ -123,7 +123,7 @@ function HeroControls({ visible, sound, setSound, soundId, setSoundId, real, ove
 }
 
 const POINT_ICONS = [Ship, Route, BrainCircuit];
-const SOLUTION_ICONS = [Radar, ShieldCheck, Eye];
+const SOLUTION_ICONS = [Radar, BrainCircuit, Eye];
 
 const NAV = [
   { label: 'الرئيسية', slide: 0 },
@@ -404,15 +404,16 @@ export default function Intro({ stage, onPhase, onEnter }) {
         {/* 2. importance */}
         <section className="relative flex min-h-[130vh] items-center px-6 sm:px-16">
           <div className="max-w-3xl">
-            <p className="reveal mb-4 font-display text-lg font-bold text-sea">{s2.kicker}</p>
-            <p className="reveal font-display text-[22vw] font-extrabold leading-none text-white sm:text-[11rem]" dir="ltr">
-              {s2.stat.value}
+            <p className="reveal mb-4 font-display text-lg font-bold text-sea [text-shadow:0_2px_14px_rgba(5,12,25,.9)]">{s2.kicker}</p>
+            <p className="reveal flex items-baseline gap-3 font-display font-extrabold leading-none text-white [text-shadow:0_2px_14px_rgba(5,12,25,.9)]">
+              {s2.stat.prefix && <span className="text-4xl text-sea sm:text-6xl">{s2.stat.prefix}</span>}
+              <span className="text-[22vw] sm:text-[11rem]" dir="ltr">{s2.stat.value}</span>
             </p>
-            <p className="reveal mt-2 font-display text-2xl font-bold text-white sm:text-4xl">
+            <p className="reveal mt-2 font-display text-2xl font-bold text-white [text-shadow:0_2px_14px_rgba(5,12,25,.9)] sm:text-4xl">
               {s2.stat.label}
               <Source k={s2.source} />
             </p>
-            <p className="reveal mt-6 max-w-xl text-lg text-ink/80">{s2.lines[0]}</p>
+            <p className="reveal mt-6 max-w-xl text-lg text-white [text-shadow:0_2px_14px_rgba(5,12,25,.9)]">{s2.lines[0]}</p>
           </div>
         </section>
 
@@ -426,20 +427,21 @@ export default function Intro({ stage, onPhase, onEnter }) {
                   <span className="num min-w-[5.5rem] text-4xl font-semibold text-amber" dir="ltr">{st.value}</span>
                   <span className="text-base text-ink/90 sm:text-lg">
                     {st.label}
-                    <Source k={st.source} />
+                    {st.source && <Source k={st.source} />}
                   </span>
                 </div>
               ))}
             </div>
-            <p className="reveal mt-5 text-ink/75">{s3.lines[0]}</p>
+            {s3.lines[0] && <p className="reveal mt-5 text-ink/75">{s3.lines[0]}</p>}
           </div>
         </section>
 
         {/* 4. gap */}
         <section className="relative flex min-h-[140vh] items-center px-6 sm:px-16">
           <div className="max-w-xl">
-            <p className="reveal mb-3 font-display text-lg font-bold text-sea">{s4.kicker}</p>
+            {s4.kicker && <p className="reveal mb-3 font-display text-lg font-bold text-sea">{s4.kicker}</p>}
             <h2 className="reveal font-display text-3xl font-extrabold leading-snug text-white sm:text-4xl">{s4.title}</h2>
+            {s4.intro && <p className="reveal mt-4 text-base leading-relaxed text-ink/85 sm:text-lg">{s4.intro}</p>}
             <div className="mt-6 space-y-3">
               {s4.points.map((pt, i) => {
                 const Icon = POINT_ICONS[i];
@@ -461,9 +463,9 @@ export default function Intro({ stage, onPhase, onEnter }) {
         {/* 5. solution + enter */}
         <section className="relative flex min-h-[140vh] items-center px-6 sm:px-16">
           <div className="max-w-xl">
-            <p className="reveal mb-3 font-display text-lg font-bold text-sea">{s5.kicker}</p>
+            <p className="reveal mb-1 font-display text-lg font-bold text-sea">{s5.kicker}</p>
             <h2 className="reveal font-display text-4xl font-extrabold text-white" dir="ltr">MARITIME <span className="text-sea">SENTINEL</span></h2>
-            <p className="reveal mt-2 text-lg text-ink/85">{s5.lead}</p>
+            <p className="reveal mt-2 text-lg font-semibold text-sea">{s5.lead}</p>
             <div className="mt-5 space-y-3">
               {s5.points.map((pt, i) => {
                 const Icon = SOLUTION_ICONS[i];
@@ -471,8 +473,11 @@ export default function Intro({ stage, onPhase, onEnter }) {
                   <div key={pt.title} className="reveal glass flex gap-4 rounded-2xl p-4">
                     <Icon className="mt-1 shrink-0 text-teal" size={22} />
                     <div>
-                      <p className="font-display font-bold text-white">{pt.title}</p>
-                      <p className="text-sm text-ink/80">{pt.text}</p>
+                      <p className="font-display font-bold text-white">
+                        <span className="num me-2 text-sea">{String(i + 1).padStart(2, '0')}</span>
+                        {pt.title}
+                      </p>
+                      <p className="mt-0.5 text-sm leading-relaxed text-ink/80">{pt.text}</p>
                     </div>
                   </div>
                 );

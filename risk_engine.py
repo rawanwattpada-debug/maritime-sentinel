@@ -8,7 +8,7 @@ risk_engine.py  -  محرك الخطورة (العضوة 3)
 الاستخدام:
     engine = RiskEngine(own_ship=dict(lat=12.60, lon=43.30, sog_kn=12, cog_deg=0))
     out = engine.update(batch_df)          # batch = نقاط لحظة واحدة (أو عدة لحظات)
-    out = engine.score_all(full_df)        # للتقييم evaluate.py على ملف كامل
+    out = engine.score_all(full_df)        # للتقييم على ملف كامل (انظري evaluate_risk.py)
 
 كل الأرقام في CONFIG افتراضات بداية، تتعدل من مكان واحد.
 """
