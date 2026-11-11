@@ -1,0 +1,28 @@
+{
+  "_help": "Settings for fusion.py. Starting assumptions from the team plan; tune them here, not in the code.",
+
+  "radar": {
+    "range_nm": 12,
+    "noise_m": 35,
+    "detect_prob_ship": 0.92,
+    "detect_prob_small_craft": 0.80,
+    "speed_smoothing": 0.35
+  },
+
+  "association": {
+    "gate_m": 300,
+    "max_course_diff_deg": 35,
+    "max_speed_diff_kn": 6,
+    "min_speed_for_course_kn": 3,
+    "confirm_scans": 3,
+    "window_scans": 5,
+    "mature_plots": 6
+  },
+
+  "dark": {
+    "unmatched_scans": 3,
+    "sticky": true,
+    "lock_after_scans": 6,
+    "alongside_m": 300
+  }
+}

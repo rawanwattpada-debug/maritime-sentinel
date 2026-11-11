@@ -1,0 +1,9 @@
+{
+    "model": "YOLOv8n",
+    "detected_class": "boat",
+    "frames_processed": 1453,
+    "boat_detections_across_frames": 1322,
+    "frames_with_boats": 1266,
+    "unique_tracked_boats": 3,
+    "average_confidence": 0.781194944853321
+}

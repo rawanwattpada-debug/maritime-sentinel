@@ -1,0 +1,86 @@
+{
+  "settings": {
+    "engine_overrides": null,
+    "runs_per_type": 40,
+    "step_s": 5,
+    "radar_noise": {
+      "pos_m": 35,
+      "drop": 0.08,
+      "sog_kn": 1.2,
+      "cog_deg": 6
+    },
+    "own_ship": {
+      "sog_kn": 10.0,
+      "cog_deg": 330.0
+    },
+    "in_time_m": 1000,
+    "arrive_m": 300
+  },
+  "simulated": {
+    "single_approach": {
+      "boats": 40,
+      "reached_high_pct": 100.0,
+      "high_before_1km_pct": 100.0,
+      "median_km_at_first_high": 4.68,
+      "median_warning_s_before_300m": 365.0
+    },
+    "coordinated_attack": {
+      "boats": 123,
+      "reached_high_pct": 100.0,
+      "high_before_1km_pct": 100.0,
+      "median_km_at_first_high": 4.6,
+      "median_warning_s_before_300m": 325.0
+    },
+    "mother_ship": {
+      "boats": 40,
+      "reached_high_pct": 100.0,
+      "high_before_1km_pct": 100.0,
+      "median_km_at_first_high": 5.09,
+      "median_warning_s_before_300m": 400.0
+    },
+    "sudden_turn": {
+      "boats": 40,
+      "reached_high_pct": 100.0,
+      "high_before_1km_pct": 100.0,
+      "median_km_at_first_high": 4.33,
+      "median_warning_s_before_300m": 305.0
+    },
+    "fishing_cluster": {
+      "boats": 188,
+      "false_high_pct": 0.0,
+      "medium_pct": 1.1,
+      "stayed_low_pct": 98.9
+    },
+    "fast_crossing": {
+      "boats": 40,
+      "false_high_pct": 10.0,
+      "medium_pct": 10.0,
+      "stayed_low_pct": 80.0
+    },
+    "dark_transit": {
+      "boats": 40,
+      "false_high_pct": 0.0,
+      "medium_pct": 0.0,
+      "stayed_low_pct": 100.0
+    },
+    "scenarios": {
+      "threat_scenarios": 160,
+      "benign_scenarios": 120,
+      "tp": 160,
+      "fn": 0,
+      "fp": 4,
+      "tn": 116,
+      "recall_pct": 100.0,
+      "precision_pct": 97.6,
+      "false_alarm_rate_pct": 3.3
+    }
+  },
+  "real_ais": {
+    "real_ships": 35,
+    "readings": 9230,
+    "readings_high_pct": 0.0,
+    "readings_medium_pct": 0.0,
+    "ships_ever_high": 0,
+    "ships_ever_medium": 0
+  }
+}

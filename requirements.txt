@@ -1,0 +1,13 @@
+# Member 1 - real AIS data
+websockets
+pandas
+pyarrow
+fastapi
+uvicorn
+python-dotenv
+zstandard
+
+# Member 3 - risk engine (models/iforest.joblib was trained with 1.7.2: keep the same version)
+scikit-learn==1.7.2
+numpy
+joblib
