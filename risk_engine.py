@@ -56,6 +56,8 @@ CONFIG = {
     "max_range_nm": 12,           # أبعد من هذا الهدف ما يُعتبر تهديداً مباشراً
     "min_threat_kn": 6,           # أبطأ من هذا (صيد/تعويم) ما يُعدّ اقتراباً عدائياً
     "approach_cpa_nm": 2.0,       # لازم مساره فعلاً يمر قريباً من السفينة
+    "sustain_tolerance_nm": 0.05, # تذبذب الموقع (خطأ الرادار ~90 م) ما يقطع "الاقتراب المتواصل"
+    "level_hold_s": 30,           # التنبيه يطلع فوراً، بس ما ينزل إلا إذا ظل أقل 30 ثانية (يمنع الرمش)
 }
 
 DEFAULT_MODEL_PATH = Path("models/iforest.joblib")
@@ -155,6 +157,7 @@ class RiskEngine:
         self.scorer = AnomalyScorer(model_path)
         self.hist = defaultdict(lambda: deque(maxlen=self.cfg["history_len"]))
         self.own_now = dict(own_ship) if own_ship else None
+        self.alert = {}  # track_id -> (آخر مستوى, آخر وقت كان فيه بهذا المستوى أو أعلى)
 
     # ---- واجهة عامة ------------------------------------------------------
     def update(self, batch: pd.DataFrame) -> pd.DataFrame:
@@ -216,7 +219,7 @@ class RiskEngine:
         for p in reversed(pts[:-1]):
             px, py = to_xy_nm(p.lat, p.lon, own["lat"], own["lon"])
             r = math.hypot(px, py)
-            if r > prev_rng + 0.01:        # كانت أبعد = كان يقترب
+            if r > prev_rng - c["sustain_tolerance_nm"]:   # كانت أبعد (أو نفس المسافة ضمن خطأ القياس) = ما زال يقترب
                 sustain_s += (prev_t - p.timestamp).total_seconds()
                 prev_rng, prev_t = r, p.timestamp
             else:
@@ -231,7 +234,9 @@ class RiskEngine:
                 break
         else:
             head_err_before = head_err
-        turned_toward = turn_deg >= c["turn_deg"] and head_err <= c["approach_heading_deg"] < head_err_before
+        # قارب شبه واقف اتجاهه عشوائي (انجراف)، فما نعتبر "تغيّر الاتجاه" إلا لو يتحرك فعلاً
+        turned_toward = (turn_deg >= c["turn_deg"] and head_err <= c["approach_heading_deg"] < head_err_before
+                         and cur.sog_kn >= c["min_threat_kn"])
 
         # ميزات نموذج الشذوذ (من آخر نقطة بعيدة min_dt_s)
         if_feats, accel = None, 0.0
@@ -335,6 +340,16 @@ class RiskEngine:
 
         score = int(round(min(score, 100)))
         level = "HIGH" if score >= c["level_high"] else "MEDIUM" if score >= c["level_medium"] else "LOW"
+
+        # ثبات التنبيه: المستوى يطلع فوراً، وما ينزل إلا بعد level_hold_s من آخر مرة كان فيها أعلى
+        rank = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
+        prev = self.alert.get(tid)
+        if prev and rank[level] < rank[prev[0]] and (ts - prev[1]).total_seconds() < c["level_hold_s"]:
+            level = prev[0]
+            score = max(score, c["level_high"] if level == "HIGH" else c["level_medium"])
+            reasons.append("نبقي التنبيه حتى نتأكد من زوال الخطر")
+        else:
+            self.alert[tid] = (level, ts)
 
         if level == "LOW" and not approaching:
             reasons = ["بدون AIS | حركة بطيئة وعشوائية بدون اتجاه نحو السفينة"] if f["is_dark"] \
