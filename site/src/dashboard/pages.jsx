@@ -3,7 +3,7 @@ import {
   AlertTriangle, Anchor, CheckCircle2, Eye, MapPin, Radio, ShieldAlert, Ship, Target, Video, XCircle,
   Navigation, Gauge, Crosshair, Clock,
 } from 'lucide-react';
-import { LEVEL_AR, fmtRange, fmtTime } from '../data/useDemo';
+import { LEVEL_AR, fmtRange, fmtTime, isDark } from '../data/useDemo';
 import { VIEWS } from '../map/MapStage';
 
 // ---------------------------------------------------------------- small pieces
@@ -12,6 +12,7 @@ export function targetName(p) {
   if (!p) return '—';
   if (p.source === 'own') return 'سفينتنا';
   if (p.source === 'ais') return `سفينة ${p.mmsi}`;
+  if (p.source === 'radar') return p.fusion === 'tentative' ? `هدف رادار ${p.track_id} (قيد التحقق)` : `هدف مظلم ${p.track_id}`;
   const n = (p.track_id.match(/(\d+)$/) || [, '?'])[1];
   const kind = p.label === 'fishing_cluster' ? 'قارب' : 'هدف';
   return `${kind} بدون AIS #${Number(n) + 1}`;
@@ -96,17 +97,25 @@ function AlertCard({ p, onInvestigate, onLocate }) {
 
 export function OverviewPage({ demo, stage, alerts, onSelect, setTab, drone, decisions, setFollow }) {
   const ais = demo.points.filter((p) => p.source === 'ais').length;
-  const dark = demo.points.filter((p) => p.source === 'radar_sim').length;
+  const confirmed = demo.points.filter((p) => p.source === 'ais' && p.radar_id).length;
+  const dark = demo.points.filter((p) => isDark(p) && p.fusion !== 'tentative').length;
+  const checking = demo.points.filter((p) => p.fusion === 'tentative').length;
+  const fe = demo.meta.fusion_eval?.real_traffic;
   const high = alerts.filter((a) => a.level === 'HIGH').length;
   const med = alerts.filter((a) => a.level === 'MEDIUM').length;
   return (
     <div className="pointer-events-none absolute inset-0 flex flex-col gap-4 p-5 pb-28">
       <div className="flex gap-3">
-        <Kpi label="سفن مرصودة (AIS)" value={ais} tone="text-sea" note="بيانات حقيقية مسجلة" />
-        <Kpi label="أهداف بدون AIS" value={dark} tone="text-ink" note="رادار (محاكاة)" />
+        <Kpi label="سفن مسجلة (AIS)" value={ais} tone="text-sea" note={`${confirmed} منها أكّدها الرادار`} />
+        <Kpi label="أهداف مظلمة اكتشفها الرادار" value={dark} tone={dark ? 'text-amber' : 'text-white'} note={checking ? `${checking} قيد التحقق` : 'لا تطابق أي سفينة AIS'} />
         <Kpi label="تنبيهات عالية" value={high} tone={high ? 'text-danger' : 'text-white'} />
         <Kpi label="تنبيهات متوسطة" value={med} tone={med ? 'text-amber' : 'text-white'} />
-        <Kpi label="المسيّرة" value={drone === 'ACTIVE' ? 'في الجو' : 'جاهزة'} tone="text-teal" note="الإطلاق بموافقة بشرية" />
+        <Kpi
+          label="دقة مطابقة الرادار مع AIS"
+          value={fe ? `${fe.registered_ships_correctly_identified_pct}%` : '—'}
+          tone="text-teal"
+          note={fe ? `على ${fe.registered_ships} سفينة حقيقية · إنذار كاذب ${fe.registered_ships_wrongly_flagged_dark_pct}%` : 'شغّلي evaluate_fusion.py'}
+        />
       </div>
       <div className="flex min-h-0 flex-1 justify-end">
         <Panel title="التنبيهات الحالية" icon={ShieldAlert} className="flex w-[360px] flex-col overflow-hidden">
@@ -153,7 +162,13 @@ export function MonitorPage({ demo, stage, selected, onSelect, setTab, setFollow
                 <LevelPill level={top.level} score={top.score} />
               </div>
               <p className="mt-1 text-[11px] text-muted">
-                {top.source === 'ais' ? 'يرسل AIS · بيانات حقيقية' : top.source === 'own' ? 'سفينتنا' : 'بدون AIS · رادار (محاكاة)'}
+                {top.source === 'own'
+                  ? 'سفينتنا'
+                  : top.source === 'ais'
+                    ? (top.radar_id ? `يرسل AIS · أكّده الرادار (${top.radar_id})` : 'يرسل AIS · لم يلتقطه الرادار في هذه المسحة')
+                    : top.fusion === 'tentative'
+                      ? 'رادار فقط · جاري مطابقته مع سفن AIS'
+                      : 'رادار فقط · لا يطابق أي سفينة AIS ← هدف مظلم'}
               </p>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <Stat label="السرعة" value={`${top.sog_kn ?? '—'} عقدة`} />
@@ -166,7 +181,7 @@ export function MonitorPage({ demo, stage, selected, onSelect, setTab, setFollow
                 <button onClick={() => flyTo(stage, top, setFollow)} className="flex-1 rounded-lg border border-sea/40 py-2 text-xs text-sea hover:bg-sea/10">
                   تتبّع على الخريطة
                 </button>
-                {top.source === 'radar_sim' && (
+                {isDark(top) && (
                   <button onClick={() => setTab('alert')} className="flex-1 rounded-lg border border-amber/40 py-2 text-xs text-amber hover:bg-amber/10">
                     فتح التحقيق
                   </button>
@@ -179,6 +194,8 @@ export function MonitorPage({ demo, stage, selected, onSelect, setTab, setFollow
           <ul className="space-y-1.5 text-xs text-ink/85">
             <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-sm bg-[#facc15]" /> سفينتنا</li>
             <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-sm bg-sea" /> سفينة تجارية (AIS)</li>
+            <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-full border border-sea" /> نقطة رادار طابقت سفينة AIS (مع خط)</li>
+            <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-sm bg-[#a78bfa]" /> هدف رادار قيد التحقق</li>
             <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-sm bg-safe" /> بدون AIS · منخفض</li>
             <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-sm bg-amber" /> بدون AIS · متوسط</li>
             <li className="flex items-center gap-2"><span className="h-3 w-3 rounded-sm bg-danger" /> بدون AIS · عالي</li>
@@ -231,7 +248,7 @@ function RangeChart({ series }) {
 }
 
 export function AlertPage({ demo, alerts, selected, onSelect, setTab, decide, decisions }) {
-  const target = (selected && selected.source === 'radar_sim' ? selected : null) || alerts[0] || null;
+  const target = (selected && isDark(selected) ? selected : null) || alerts[0] || null;
   const track = target ? demo.tracks.get(target.track_id) : null;
   const events = (track?.events || []).filter((e) => e.sec <= demo.sec);
   const series = useMemo(() => {
@@ -338,7 +355,7 @@ export function DronePage({ alerts, selected, drone, setDrone, decide }) {
   const [authorized, setAuthorized] = useState(false);
   const [videoFailed, setVideoFailed] = useState(false);
   const [summary, setSummary] = useState(null);
-  const target = (selected && selected.source === 'radar_sim' ? selected : null) || alerts[0] || null;
+  const target = (selected && isDark(selected) ? selected : null) || alerts[0] || null;
 
   useEffect(() => {
     fetch('media/vision_summary.json').then((r) => (r.ok ? r.json() : null)).then(setSummary).catch(() => {});
@@ -446,7 +463,7 @@ export function VesselPage({ demo, own, onSelect, setTab }) {
             {nearby.map((p) => (
               <tr key={p.track_id} className="cursor-pointer hover:bg-white/5" onClick={() => { onSelect(p.track_id); setTab('monitor'); }}>
                 <td className="py-2 text-ink">{targetName(p)}</td>
-                <td className="py-2 text-muted">{p.source === 'ais' ? 'AIS' : 'بدون AIS'}</td>
+                <td className="py-2 text-muted">{p.source === 'ais' ? (p.radar_id ? 'AIS + رادار' : 'AIS') : p.fusion === 'tentative' ? 'رادار · قيد التحقق' : 'رادار فقط'}</td>
                 <td className="num py-2">{fmtRange(p.range_m)}</td>
                 <td className="num py-2">{fmtRange(p.cpa_m)}</td>
                 <td className="num py-2">{p.sog_kn ?? '—'}</td>

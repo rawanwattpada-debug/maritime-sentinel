@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 
 import replay as rp
+from fusion import Fuser, FusionMetrics, RadarSim, load_config as load_fusion_config
 
 OUT_FILE = Path("site/public/data/demo.json")
 M_PER_DEG_LAT = 110_540
@@ -161,14 +162,28 @@ def interim_risk(points):
 
 
 def load_risk_engine():
-    """Use member 3's engine if present: risk_engine.score_targets(points) -> {track_id: {...}}."""
+    """Use member 3's engine if present: risk_engine.RiskEngine (stateful, one batch per moment).
+    Returns a function points -> {track_id: {score, level, reasons}}, or None."""
     if not os.path.exists("risk_engine.py"):
         return None
     try:
-        import risk_engine
-        return getattr(risk_engine, "score_targets", None)
+        import pandas as pd
+        from risk_engine import RiskEngine
+        eng = RiskEngine(own_track_id="own_ship")
+        if hasattr(eng, "scorer") and not getattr(eng.scorer, "available", True):
+            print("  ! risk_engine: anomaly model not available - rules only")
+
+        def score(points):
+            df = pd.DataFrame(points)
+            out = eng.update(df)
+            res = {}
+            for r in out.itertuples(index=False):
+                reasons = [x.strip() for x in str(r.reasons).split("|") if x.strip()]
+                res[r.track_id] = {"score": int(round(float(r.score))), "level": r.level, "reasons": reasons}
+            return res
+        return score
     except Exception as e:
-        print(f"  ! risk_engine.py could not be loaded ({e}) - using interim rules")
+        print(f"  ! risk_engine.py could not be used ({e}) - using interim rules")
         return None
 
 
@@ -190,16 +205,67 @@ def main():
     engine = load_risk_engine()
     speed = R.default_speed()
     start, end = R.window(speed)
+    cfg = load_fusion_config()
+    radar, fuser, fmetrics = RadarSim(cfg, seed=7), Fuser(cfg), FusionMetrics()
+    coast = {}        # radar id -> last shown point, kept for a missed sweep or two (like ARPA)
+    last_risk = {}    # radar id -> last risk result, shown while the track coasts
     frames, n = [], int(round((end - start) / speed))
     for sec in range(n + 1):
         t = start + sec * speed
-        f = rp.frame(t, speed)
-        risk = engine(f["points"]) if engine else interim_risk(f["points"])
-        for p in f["points"]:
-            p.update(risk.get(p["track_id"], {}))
+        truth = rp.frame(t, speed)["points"]           # the real situation (hidden from the system)
+        fused = fuser.update(radar.scan(t, truth), truth)
+        fmetrics.add(t, fused)
+        ts = rp.iso(t)
+
+        # what the SYSTEM knows: our ship, the AIS vessels, and radar tracks it could not match
+        shown = [dict(p) for p in truth if p["source"] in ("own", "ais")]
+        matched = {f["mmsi"]: f for f in fused if f["status"] == "ais"}
+        for p in shown:
+            if p["source"] == "ais":
+                r = matched.get(str(p["mmsi"]))
+                p["fusion"] = "matched" if r else "ais_only"
+                if r:
+                    p["radar_id"] = r["radar_id"]
+                    p["radar_lat"], p["radar_lon"] = round(r["lat"], 5), round(r["lon"], 5)
+        seen = set()
+        for f in fused:
+            if f["status"] == "ais":
+                continue
+            seen.add(f["radar_id"])
+            coast[f["radar_id"]] = {
+                "timestamp": ts, "track_id": f["radar_id"], "lat": f["lat"], "lon": f["lon"],
+                "sog_kn": f["sog_kn"], "cog_deg": f["cog_deg"], "source": "radar", "mmsi": "",
+                "label": "", "fusion": f["status"], "_t": t,
+            }
+        for rid, c in list(coast.items()):
+            if t - c["_t"] > 2 * speed:               # gone for more than two sweeps
+                del coast[rid]
+        shown += [{k: v for k, v in c.items() if k != "_t"} | {"coasting": rid not in seen}
+                  for rid, c in coast.items()]
+
+        # risk: only fresh readings go to the engine. A track missed on this sweep is shown at
+        # its last radar position, but feeding that repeat would look like the boat stopped.
+        scorable = [p for p in shown if p.get("fusion") != "tentative" and not p.get("coasting")]
+        risk = engine(scorable) if engine else interim_risk(scorable)
+        for p in shown:
+            if p.get("fusion") == "tentative":
+                p.update({"score": 0, "level": None, "reasons": ["قيد التحقق من الهوية (مطابقة الرادار مع AIS)"]})
+            elif p.get("coasting"):
+                p.update(last_risk.get(p["track_id"], {}))
+            else:
+                r = risk.get(p["track_id"], {})
+                p.update(r)
+                if p["source"] == "radar" and r:
+                    last_risk[p["track_id"]] = r
             for k in ("lat", "lon"):
                 p[k] = round(float(p[k]), 5)
-        frames.append({"sec": sec, "t": f["t"], "points": f["points"]})
+        frames.append({"sec": sec, "t": ts, "points": shown})
+
+    fusion_eval = None
+    if os.path.exists("fusion_eval.json"):
+        with open("fusion_eval.json", encoding="utf-8") as fh:
+            fe = json.load(fh)
+        fusion_eval = {"real_traffic": fe["real_traffic"], "demo_scenarios_mean": fe["demo_scenarios_mean"]}
 
     meta = {
         "mode": "REPLAY",
@@ -207,10 +273,13 @@ def main():
         "loop_seconds": n,
         "reference": list(ref),
         "risk_engine": "member3" if engine else "interim",
+        "fusion_demo_run": fmetrics.summary(),
+        "fusion_eval": fusion_eval,
         "placeholder_scenarios": placeholders,
         "scenes": [{"file": sc["file"], "at_second": sc["at_second"],
                     "label": sc["file"].rsplit(".", 1)[0]} for sc in schedule["scenarios"]],
-        "data_note": "سفن حقيقية مسجلة من مضيق دوفر ومنقولة لباب المندب، والأهداف بدون AIS محاكاة",
+        "data_note": "سفن حقيقية مسجلة من مضيق دوفر ومنقولة لباب المندب، والأهداف بدون AIS محاكاة. "
+                     "الأهداف المظلمة يكتشفها النظام بمطابقة الرادار مع AIS.",
     }
     OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(OUT_FILE, "w", encoding="utf-8") as fh:
@@ -223,6 +292,9 @@ def main():
     if placeholders:
         print(f"  ! TEMPORARY scenarios (member 2's files missing): {', '.join(placeholders)}")
     print(f"  risk engine: {meta['risk_engine']}")
+    fd = meta["fusion_demo_run"]
+    print(f"  fusion in this loop: dark targets found {fd['dark_targets_detected_pct']}% "
+          f"(median {fd['median_seconds_to_flag_dark']} s), ships identified {fd['registered_ships_correctly_identified_pct']}%")
 
 
 if __name__ == "__main__":

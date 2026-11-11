@@ -48,9 +48,9 @@ function SceneBar({ demo }) {
         ))}
       </div>
       <div className="relative mt-1.5 h-4 text-[11px] text-ink/80">
-        <span className="absolute right-0">البداية</span>
+        {!scenes.some((s) => s.at_second < demo.loop * 0.08) && <span className="absolute right-0">البداية</span>}
         {scenes.map((s) => (
-          <span key={s.label} className="absolute -translate-x-1/2 whitespace-nowrap" style={{ right: pct(s.at_second) }}>
+          <span key={s.label} className={`absolute whitespace-nowrap ${s.at_second < demo.loop * 0.08 ? '' : '-translate-x-1/2'}`} style={{ right: pct(s.at_second) }}>
             {SCENE_AR[s.label] || s.label}
           </span>
         ))}

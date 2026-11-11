@@ -11,9 +11,15 @@ export const LEVEL_COLOR = {
 export const AIS_COLOR = [34, 211, 238];
 export const OWN_COLOR = [250, 204, 21];
 
+export const TENTATIVE_COLOR = [167, 139, 250];
+
+// a target the radar sees but no AIS vessel matches (found by fusion), or an older simulated target
+export const isDark = (p) => p && (p.source === 'radar' || p.source === 'radar_sim');
+
 export function colorOf(p) {
   if (p.source === 'own') return OWN_COLOR;
   if (p.source === 'ais') return AIS_COLOR;
+  if (p.fusion === 'tentative') return TENTATIVE_COLOR;
   return LEVEL_COLOR[p.level] || AIS_COLOR;
 }
 

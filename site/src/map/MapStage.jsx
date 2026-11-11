@@ -7,7 +7,7 @@ setWorkerUrl(workerUrl);
 import { MapboxOverlay } from '@deck.gl/mapbox';
 import { ColumnLayer, LineLayer, ScatterplotLayer } from '@deck.gl/layers';
 import { TripsLayer } from '@deck.gl/geo-layers';
-import { colorOf, LEVEL_COLOR, AIS_COLOR, OWN_COLOR } from '../data/useDemo';
+import { colorOf, isDark, LEVEL_COLOR, AIS_COLOR, OWN_COLOR } from '../data/useDemo';
 
 // One map for the whole site: the intro flies over it, then it becomes the dashboard.
 // Satellite imagery (Esri) darkened to match the deck; plain dark sea if tiles fail.
@@ -126,7 +126,7 @@ const MapStage = forwardRef(function MapStage(
 
   const own = demo.points.find((p) => p.track_id === 'own_ship');
   const visible = useMemo(
-    () => demo.points.filter((p) => showDark || p.source !== 'radar_sim'),
+    () => demo.points.filter((p) => showDark || !isDark(p)),
     [demo.points, showDark],
   );
   const levelById = useMemo(() => new Map(visible.map((p) => [p.track_id, p])), [visible]);
@@ -188,6 +188,31 @@ const MapStage = forwardRef(function MapStage(
         }),
       );
     }
+    // fusion: each AIS vessel the radar confirmed gets its radar plot and a thin link line
+    const confirmed = visible.filter((p) => p.radar_lat != null);
+    if (confirmed.length) {
+      layers.push(
+        new LineLayer({
+          id: 'fusion-links',
+          data: confirmed,
+          getSourcePosition: (p) => [p.radar_lon, p.radar_lat],
+          getTargetPosition: (p) => [p.lon, p.lat],
+          getColor: [34, 211, 238, 200],
+          getWidth: 1.2,
+          widthUnits: 'pixels',
+        }),
+        new ScatterplotLayer({
+          id: 'radar-plots',
+          data: confirmed,
+          getPosition: (p) => [p.radar_lon, p.radar_lat],
+          getRadius: 70,
+          getLineColor: [34, 211, 238, 230],
+          stroked: true,
+          filled: false,
+          lineWidthMinPixels: 1.2,
+        }),
+      );
+    }
     if (own) {
       layers.push(
         new LineLayer({
@@ -216,7 +241,7 @@ const MapStage = forwardRef(function MapStage(
       ...[
         { id: 'own', filter: (p) => p.source === 'own', radius: 170, h: () => 700 },
         { id: 'ais', filter: (p) => p.source === 'ais', radius: 110, h: () => 380 },
-        { id: 'dark', filter: (p) => p.source !== 'own' && p.source !== 'ais', radius: 80,
+        { id: 'dark', filter: (p) => isDark(p), radius: 80,
           h: (p) => (p.level === 'HIGH' ? 520 : p.level === 'MEDIUM' ? 360 : 220) },
       ].map(
         (g) =>
