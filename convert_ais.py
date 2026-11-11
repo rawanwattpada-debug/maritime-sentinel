@@ -141,8 +141,23 @@ def apply_relocation(lat, lon, cog, p):
     lat_t, lon_t = p["target_center"]
     new_lat = lat_t + y2 / M_PER_DEG_LAT
     new_lon = lon_t + x2 / (math.cos(math.radians(lat_t)) * M_PER_DEG_LON_EQ)
-    new_cog = (cog + p["target_bearing"] - p["source_axis"]) % 360
+    _, new_cog = relocate_velocity(1.0, cog, p)
     return new_lat, new_lon, new_cog, inside
+
+
+def relocate_velocity(sog, cog, p):
+    """Speed and course after relocation, using the SAME rule as the positions:
+    the along-lane part of the motion is kept, the sideways part is squeezed by
+    across_scale, then everything is turned onto the target lane.
+    (Rotating the course alone would leave ships that move partly across the lane
+    reporting more speed than they actually travel on the map.)
+    Works on single numbers or columns. Returns (new_sog, new_cog)."""
+    rel = np.radians(cog - p["source_axis"])          # course measured from the lane axis
+    v_along = sog * np.cos(rel)
+    v_side = sog * np.sin(rel) * p["across_scale"]
+    new_sog = np.hypot(v_along, v_side)
+    new_cog = (p["target_bearing"] + np.degrees(np.arctan2(v_side, v_along))) % 360
+    return new_sog, new_cog
 
 
 def relocate(df):
@@ -151,7 +166,8 @@ def relocate(df):
         return df, None, None
 
     p = fit_relocation(df)
-    df["lat"], df["lon"], new_cog, keep = apply_relocation(df["lat"], df["lon"], df["cog_deg"], p)
+    df["lat"], df["lon"], _, keep = apply_relocation(df["lat"], df["lon"], df["cog_deg"], p)
+    new_sog, new_cog = relocate_velocity(df["sog_kn"], df["cog_deg"], p)
 
     # drop ships that mostly cross the lane (e.g. Dover-Calais ferries)
     moving = df["sog_kn"] > 3
@@ -159,6 +175,7 @@ def relocate(df):
     share = aligned[moving].groupby(df.loc[moving, "mmsi"]).mean()
     crossers = share[share < LANE_ALIGNED_SHARE].index
     keep &= ~df["mmsi"].isin(crossers)
+    df["sog_kn"] = new_sog
     df["cog_deg"] = new_cog
 
     info = {

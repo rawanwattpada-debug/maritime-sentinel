@@ -51,7 +51,7 @@ import websockets
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 
-from convert_ais import OUT_SETTINGS, SOURCE_REGION, apply_relocation, axis_diff
+from convert_ais import OUT_SETTINGS, SOURCE_REGION, apply_relocation, axis_diff, relocate_velocity
 from record_ais import API_KEY, REGIONS, URL as AISSTREAM_URL
 
 MODE = "LIVE" if "--live" in sys.argv else "REPLAY"
@@ -349,8 +349,9 @@ async def live_listener(settings):
                     if sog > 3 and axis_diff(cog, settings["source_axis"]) > 35:
                         Live.ships.pop(meta["MMSI"], None)
                         continue
-                    lat, lon, new_cog, inside = apply_relocation(
+                    lat, lon, _, inside = apply_relocation(
                         meta["latitude"], meta["longitude"], cog, settings)
+                    sog, new_cog = relocate_velocity(sog, cog, settings)
                     if not inside:
                         Live.ships.pop(meta["MMSI"], None)
                         continue
