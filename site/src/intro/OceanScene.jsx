@@ -83,6 +83,7 @@ const oceanFrag = /* glsl */ `
   uniform float uAmp;
   uniform float uFogDensity;
   uniform vec3 uFoam;
+  uniform float uSheen;
   varying vec3 vWorld;
   varying vec3 vNormal;
   varying float vHeight;
@@ -108,6 +109,9 @@ const oceanFrag = /* glsl */ `
     vec3 H = normalize(uSunDir + V);
     float spec = pow(max(dot(n, H), 0.0), 220.0);
     col += uSun * spec * 2.2;
+    // the sun's glittering path on the sea
+    float glit = pow(max(dot(n, H), 0.0), 38.0) * (0.6 + 0.8 * noise(vWorld.xz * 0.9 + uTime * 1.5));
+    col += uSun * glit * 0.45 * uSheen;
 
     // foam on the crests
     float foam = smoothstep(1.6 * uAmp, 2.4 * uAmp, vHeight + noise(vWorld.xz * 0.12 + uTime * 0.2) * 0.9);
@@ -173,7 +177,8 @@ const skyFrag = /* glsl */ `
     // sun by day, moon by night: a glow and a disc
     float sd2 = max(dot(d, uSunDir), 0.0);
     col += uGlow * pow(sd2, mix(18.0, 60.0, uNight)) * mix(0.9, 0.45, uNight) * uSun;
-    col += uGlow * smoothstep(0.9990, 0.9994, sd2) * mix(2.5, 1.6, uNight) * uSun;
+    col += uGlow * smoothstep(0.99990, 0.99995, sd2) * mix(5.0, 1.8, uNight) * uSun;   // the disc
+    col += uGlow * (pow(sd2, 14.0) * 0.22 + pow(sd2, 900.0) * 0.8) * (1.0 - uNight) * uSun;  // warm halo + bright corona
 
     // clouds drifting slowly across the sky
     if (uCloud > 0.001 && d.y > 0.0) {
@@ -396,7 +401,7 @@ const lookCurve = new THREE.CatmullRomCurve3(CAM.map((c) => new THREE.Vector3(..
 
 // numbers and colours that follow the weather (eased so a change takes a few seconds)
 const LOOK_COLORS = ['foam', 'skyTop', 'skyHorizon', 'glow', 'cloudLit', 'cloudDark', 'fog', 'deep', 'shallow', 'skyRefl', 'spec', 'keyColor'];
-const LOOK_NUMBERS = ['sun', 'cloud', 'stars', 'night', 'fogDensity', 'hemi', 'key', 'exposure', 'rain', 'waves'];
+const LOOK_NUMBERS = ['sheen', 'sun', 'cloud', 'stars', 'night', 'fogDensity', 'hemi', 'key', 'exposure', 'rain', 'waves'];
 
 // progressRef.current: 0..1 scroll position through slides 1-2; activeRef.current: render or pause
 // lookRef.current: the weather look to show (see weather.js lookFor)
@@ -416,9 +421,9 @@ export default function OceanScene({ progressRef, activeRef, lookRef }) {
     const FOG = new THREE.Color(0x1a4766);
     const camera = new THREE.PerspectiveCamera(42, el.clientWidth / el.clientHeight, 0.5, 4000);
 
-    const sunDir = new THREE.Vector3(-0.55, 0.22, -0.8).normalize();
+    const sunDir = new THREE.Vector3(0.49, 0.33, -1.0).normalize(); // in view: upper left on slide 1
     const sky = new THREE.Mesh(
-      new THREE.SphereGeometry(2500, 32, 16),
+      new THREE.SphereGeometry(2500, 64, 32),
       new THREE.ShaderMaterial({
         side: THREE.BackSide,
         depthWrite: false,
@@ -450,6 +455,7 @@ export default function OceanScene({ progressRef, activeRef, lookRef }) {
         uAmp: { value: 1 },
         uFogDensity: { value: 0.0023 },
         uFoam: { value: new THREE.Color(0xc7e6f2) },
+        uSheen: { value: 1 },
         uDeep: { value: new THREE.Color(0x06263f) },
         uShallow: { value: new THREE.Color(0x13788f) },
         uSky: { value: new THREE.Color(0x3f8199) },
@@ -553,6 +559,7 @@ export default function OceanScene({ progressRef, activeRef, lookRef }) {
       ou.uSky.value.copy(cur.skyRefl);
       ou.uSun.value.copy(cur.spec);
       ou.uFogDensity.value = cur.fogDensity;
+      ou.uSheen.value = cur.sheen;
       ou.uAmp.value = cur.waves;
       hemi.intensity = cur.hemi;
       key.intensity = cur.key;
