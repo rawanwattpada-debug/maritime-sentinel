@@ -413,8 +413,8 @@ export function DronePage({ alerts, selected, drone, setDrone, decide }) {
           <Panel title="نتيجة الكشف" icon={Target}>
             {summary ? (
               <div className="grid grid-cols-2 gap-2">
-                <Stat label="قوارب مكتشفة" value={summary.boats ?? summary.count ?? '—'} />
-                <Stat label="متوسط الثقة" value={summary.mean_confidence != null ? `${Math.round(summary.mean_confidence * 100)}%` : '—'} />
+                <Stat label="قوارب مكتشفة" value={summary.unique_tracked_boats ?? summary.boats ?? summary.count ?? '—'} />
+                <Stat label="متوسط الثقة" value={(summary.average_confidence ?? summary.mean_confidence) != null ? `${Math.round((summary.average_confidence ?? summary.mean_confidence) * 100)}%` : '—'} />
               </div>
             ) : (
               <p className="text-xs text-muted">تظهر هنا نتائج نموذج YOLO (عدد القوارب ونسبة الثقة) عند توفر vision_summary.json.</p>
