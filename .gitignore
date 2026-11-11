@@ -167,7 +167,7 @@ venv.bak/
 .ropeproject
 
 # mkdocs/Zensical documentation
-/site
+# /site  (mkdocs output; not used here - our website lives in site/)
 
 # mypy
 .mypy_cache/
@@ -218,3 +218,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Raw recordings and downloads (too big for GitHub - keep them in Google Drive)
+data/raw/
+data/*.html

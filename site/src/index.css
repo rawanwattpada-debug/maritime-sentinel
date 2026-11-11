@@ -1,0 +1,50 @@
+@import "tailwindcss";
+@import "maplibre-gl/dist/maplibre-gl.css";
+
+/* Colours and fonts follow the team's presentation deck */
+@theme {
+  /* navy-slate base (lighter than before), cyan/teal accents, amber for warnings */
+  --color-abyss: #0b1426;
+  --color-deep: #111f36;
+  --color-panel: #182a45;
+  --color-line: #2c4263;
+  --color-sea: #22d3ee;
+  --color-teal: #2dd4bf;
+  --color-amber: #fbbf24;
+  --color-danger: #f87171;
+  --color-safe: #4ade80;
+  --color-ink: #f1f5f9;
+  --color-muted: #9fb3c8;
+
+  --font-display: "Cairo", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans Arabic", "Cairo", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--color-abyss);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* glass panels over the map */
+.glass {
+  background: linear-gradient(160deg, color-mix(in srgb, var(--color-panel) 78%, transparent), color-mix(in srgb, var(--color-deep) 70%, transparent));
+  border: 1px solid color-mix(in srgb, var(--color-sea) 22%, var(--color-line));
+  box-shadow: 0 10px 30px -12px rgb(0 0 0 / 0.45), inset 0 1px 0 rgb(255 255 255 / 0.04);
+  backdrop-filter: blur(12px);
+}
+
+.maplibregl-ctrl-attrib { font-size: 10px; background: rgb(3 10 20 / 0.6) !important; }
+.maplibregl-ctrl-attrib a { color: var(--color-muted) !important; }
+
+@keyframes pulse-ring { 0% { transform: scale(.6); opacity: .9 } 100% { transform: scale(2.4); opacity: 0 } }
+.pulse-ring { animation: pulse-ring 1.8s ease-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
