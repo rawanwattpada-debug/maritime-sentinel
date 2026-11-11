@@ -14,7 +14,7 @@ const TABS = [
 ];
 
 function ModeBadge({ mode }) {
-  // The badge always tells the truth: this is the recorded demo loop
+  // Simulated live picture: real recorded ships + simulated targets (disclosed in the reports)
   return (
     <span className="num inline-flex items-center gap-1.5 rounded border border-amber/50 bg-amber/10 px-2 py-0.5 text-[11px] font-semibold text-amber">
       <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber" />

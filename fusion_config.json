@@ -15,10 +15,14 @@
     "max_speed_diff_kn": 6,
     "min_speed_for_course_kn": 3,
     "confirm_scans": 3,
-    "window_scans": 5
+    "window_scans": 5,
+    "mature_plots": 6
   },
 
   "dark": {
-    "unmatched_scans": 3
+    "unmatched_scans": 3,
+    "sticky": true,
+    "lock_after_scans": 6,
+    "alongside_m": 300
   }
 }

@@ -1,0 +1,7 @@
+{
+  "runs": 25,
+  "flagged_dark_before_reaching_ship_pct": 89.5,
+  "kept_dark_while_next_to_ship_pct": 100.0,
+  "alert_dark_next_to_ship_pct": 100.0,
+  "real_ship_still_identified_pct": 100.0
+}

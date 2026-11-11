@@ -14,10 +14,14 @@
       "max_speed_diff_kn": 6,
       "min_speed_for_course_kn": 3,
       "confirm_scans": 3,
-      "window_scans": 5
+      "window_scans": 5,
+      "mature_plots": 6
     },
     "dark": {
-      "unmatched_scans": 3
+      "unmatched_scans": 3,
+      "sticky": true,
+      "lock_after_scans": 6,
+      "alongside_m": 300
     }
   },
   "scan_seconds": 10,
@@ -30,9 +34,9 @@
     "dark_scans_hidden_as_ship_pct": null,
     "median_seconds_to_flag_dark": null,
     "counts": {
-      "ship_tentative": 51,
-      "ship_decided": 3724,
-      "ship_correct": 3724,
+      "ship_tentative": 38,
+      "ship_decided": 3737,
+      "ship_correct": 3737,
       "ship_false_dark": 0,
       "ship_wrong_vessel": 0,
       "dark_correct": 0,
@@ -43,8 +47,8 @@
     "registered_ships": 19
   },
   "demo_scenarios_mean": {
-    "registered_ships_correctly_identified_pct": 99.94,
-    "registered_ships_wrongly_flagged_dark_pct": 0.06,
+    "registered_ships_correctly_identified_pct": 100.0,
+    "registered_ships_wrongly_flagged_dark_pct": 0.0,
     "registered_ships_matched_to_wrong_vessel_pct": 0.0,
     "dark_targets_detected_pct": 100.0,
     "dark_scans_correct_pct": 100.0,

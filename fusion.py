@@ -97,6 +97,7 @@ class RadarSim:
                 cog = math.degrees(math.atan2(vx, vy)) % 360
             out.append({
                 "radar_id": rid, "t": t, "lat": lat, "lon": lon,
+                "plots": len(tr),  # how many plots the motion estimate is built on
                 "sog_kn": None if sog is None else round(sog, 1),
                 "cog_deg": None if cog is None else round(cog, 1),
                 # ground truth, used ONLY to measure accuracy, never by the Fuser
@@ -115,13 +116,20 @@ class Fuser:
         self.d = cfg["dark"]
         win = max(self.a["window_scans"], self.d["unmatched_scans"])
         self.hist = defaultdict(lambda: deque(maxlen=win))  # radar id -> recent matches (mmsi or None)
+        # once a track is called dark it stays dark: a boat with no AIS that later sails next to
+        # a registered ship must not take over that ship's identity (and must not steal its match)
+        self.sticky = self.d.get("sticky", True)
+        self.dark_ids = set()
+        self.dark_run = defaultdict(int)  # radar id -> consecutive scans called dark
 
     def _cost(self, r, s, lat0):
         dx, dy = to_xy(r["lat"], r["lon"], s["lat"], s["lon"])
         dist = math.hypot(dx, dy)
         if dist > self.a["gate_m"]:
             return None
-        if r["sog_kn"] is not None and s.get("sog_kn") is not None:
+        # speed/course from a young radar track are still noisy: gate on position only until mature
+        mature = r.get("plots", 99) >= self.a.get("mature_plots", 0)
+        if mature and r["sog_kn"] is not None and s.get("sog_kn") is not None:
             if abs(r["sog_kn"] - s["sog_kn"]) > self.a["max_speed_diff_kn"]:
                 return None
             moving = min(r["sog_kn"], s["sog_kn"]) >= self.a["min_speed_for_course_kn"]
@@ -134,11 +142,12 @@ class Fuser:
         """radar: RadarSim.scan() output; ais: contract rows with source == 'ais'.
         Returns radar tracks with 'status' ('ais' | 'dark' | 'tentative') and 'mmsi'."""
         ais = [s for s in ais if s.get("source") == "ais"]
+        candidates = [r for r in radar if r["radar_id"] not in self.dark_ids]
         match = {}
-        if radar and ais:
+        if candidates and ais:
             big = 1e9
-            cost = np.full((len(radar), len(ais)), big)
-            for i, r in enumerate(radar):
+            cost = np.full((len(candidates), len(ais)), big)
+            for i, r in enumerate(candidates):
                 for j, s in enumerate(ais):
                     c = self._cost(r, s, r["lat"])
                     if c is not None:
@@ -146,7 +155,7 @@ class Fuser:
             rows, cols = linear_sum_assignment(cost)
             for i, j in zip(rows, cols):
                 if cost[i, j] < big:
-                    match[radar[i]["radar_id"]] = str(ais[j]["mmsi"])
+                    match[candidates[i]["radar_id"]] = str(ais[j]["mmsi"])
 
         out = []
         for r in radar:
@@ -159,13 +168,28 @@ class Fuser:
                 if n > votes:
                     best, votes = m, n
             last_n = list(h)[-self.d["unmatched_scans"]:]
-            if best and votes >= self.a["confirm_scans"]:
+            if r["radar_id"] in self.dark_ids:
+                status = "dark"
+            elif best and votes >= self.a["confirm_scans"]:
                 status = "ais"
             elif len(last_n) >= self.d["unmatched_scans"] and all(x is None for x in last_n):
-                status, best = "dark", None
+                status = "dark"
+                self.dark_run[r["radar_id"]] += 1
+                # lock only after the track has been dark for a while (not on a first noisy decision)
+                if self.sticky and self.dark_run[r["radar_id"]] >= self.d.get("lock_after_scans", 1):
+                    self.dark_ids.add(r["radar_id"])
             else:
                 status = "tentative"
-            out.append({**r, "status": status, "mmsi": best if status == "ais" else None})
+            if status != "dark":
+                self.dark_run[r["radar_id"]] = 0
+            row = {**r, "status": status, "mmsi": best if status == "ais" else None}
+            if status == "dark":
+                # alert: a dark target right next to a registered ship (hiding in its radar echo)
+                near = min(((math.hypot(*to_xy(r["lat"], r["lon"], s["lat"], s["lon"])), s) for s in ais),
+                           key=lambda x: x[0], default=(None, None))
+                if near[0] is not None and near[0] <= self.d.get("alongside_m", self.a["gate_m"]):
+                    row["near_mmsi"], row["near_m"] = str(near[1]["mmsi"]), round(near[0])
+            out.append(row)
         return out
 
 

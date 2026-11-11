@@ -161,6 +161,15 @@ def interim_risk(points):
     return out
 
 
+def alongside_alert(p, r):
+    """A target the radar already knows is dark is now hiding next to a registered ship:
+    raise at least a MEDIUM alert, whatever the motion-based score says."""
+    reason = f"هدف مظلم ملاصق لسفينة مسجلة (MMSI {p['alongside_mmsi']}) على بعد {p['alongside_m']} م"
+    score = max(int(r.get("score", 0)), 55)
+    level = "HIGH" if r.get("level") == "HIGH" else "MEDIUM"
+    return {"score": score, "level": level, "reasons": [reason] + [x for x in r.get("reasons", []) if x != reason]}
+
+
 def load_risk_engine():
     """Use member 3's engine if present: risk_engine.RiskEngine (stateful, one batch per moment).
     Returns a function points -> {track_id: {score, level, reasons}}, or None."""
@@ -237,6 +246,8 @@ def main():
                 "sog_kn": f["sog_kn"], "cog_deg": f["cog_deg"], "source": "radar", "mmsi": "",
                 "label": "", "fusion": f["status"], "_t": t,
             }
+            if f.get("near_mmsi"):   # a dark target sailing right next to a registered ship
+                coast[f["radar_id"]] |= {"alongside_mmsi": f["near_mmsi"], "alongside_m": f["near_m"]}
         for rid, c in list(coast.items()):
             if t - c["_t"] > 2 * speed:               # gone for more than two sweeps
                 del coast[rid]
@@ -255,8 +266,10 @@ def main():
             else:
                 r = risk.get(p["track_id"], {})
                 p.update(r)
+                if p.get("alongside_mmsi"):
+                    p.update(alongside_alert(p, r))
                 if p["source"] == "radar" and r:
-                    last_risk[p["track_id"]] = r
+                    last_risk[p["track_id"]] = {k: p[k] for k in ("score", "level", "reasons") if k in p}
             for k in ("lat", "lon"):
                 p[k] = round(float(p[k]), 5)
         frames.append({"sec": sec, "t": ts, "points": shown})
@@ -268,7 +281,7 @@ def main():
         fusion_eval = {"real_traffic": fe["real_traffic"], "demo_scenarios_mean": fe["demo_scenarios_mean"]}
 
     meta = {
-        "mode": "REPLAY",
+        "mode": "LIVE SIMULATION",
         "speed": speed,
         "loop_seconds": n,
         "reference": list(ref),
