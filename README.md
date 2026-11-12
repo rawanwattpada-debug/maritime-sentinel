@@ -4,6 +4,12 @@
 
 > الذكاء الاصطناعي يستكشف، والإنسان يقرر.
 
+### 🌐 العرض التفاعلي: https://rawanwattpada-debug.github.io/maritime-sentinel/
+
+مرّروا للأسفل لمشاهدة المقدمة، ثم اضغطوا **غرفة العمليات** للدخول إلى لوحة التحكم. (يُفضّل Chrome على كمبيوتر)
+
+📄 التقرير التقني: [بالعربي](docs/Maritime_Sentinel_Technical_Report.docx) · [English](docs/Maritime_Sentinel_Technical_Report_EN.docx)
+
 مشروع هاكاثون 2026.
 
 ---
